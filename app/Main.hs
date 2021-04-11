@@ -8,8 +8,18 @@ import qualified Data.Text as T
 import Debug.Trace
 import Eval
 import Parser
+import System.Environment
 import Types
+
+run :: Text -> IO ()
+run input = do
+  let parsed = parseExpr input
+  case parsed of
+    Left err -> print err
+    Right x ->
+      print $ eval M.empty x
 
 main :: IO ()
 main = do
-  print $ eval M.empty $ OpList (Atom "+") [N 3, N 1, OpList (Atom "*") [N 19, N 2]]
+  xs <- System.Environment.getArgs
+  run . T.pack . head $ xs
