@@ -6,6 +6,7 @@ import Data.Text
 data Value
   = Num Int
   | Str Text
+  | Bool Bool
   deriving (Show, Eq)
 
 data TypeTag = Number | Strng deriving (Show, Eq)

@@ -20,7 +20,7 @@ tp =
         commentLine = "//",
         nestedComments = False,
         identStart = letter,
-        identLetter = letter <|> char '-',
+        identLetter = letter <|> char '-' <|> char '?',
         opStart = oneOf "!#$%&|*+-/<=>?@^_~:",
         opLetter = oneOf "!#$%&|*+-/<=>?@^_~:",
         reservedNames = [],
