@@ -21,20 +21,21 @@ tp =
         nestedComments = False,
         identStart = letter,
         identLetter = letter <|> char '-',
-        opStart = oneOf "!#$%&|*+-/:<=>?@^_~",
-        opLetter = oneOf "!#$%&|*+-/:<=>?@^_~",
+        opStart = oneOf "!#$%&|*+-/<=>?@^_~:",
+        opLetter = oneOf "!#$%&|*+-/<=>?@^_~:",
         reservedNames = [],
-        reservedOpNames = [],
+        reservedOpNames = [":"],
         caseSensitive = True
       }
 
 expr :: Parser Expr
 expr =
-  Atom . T.pack <$> identifier tp
+  try (parens tp do val <- expr; reservedOp tp ":"; type_ <- expr; pure val) -- typed expr parser (not used yet)
+    <|> Atom . T.pack <$> identifier tp
     <|> Atom . T.pack <$> operator tp
     <|> Constant . Num . fromIntegral <$> integer tp
     <|> Constant . Str . T.pack <$> stringLiteral tp
     <|> parens tp (List <$> sepBy1 expr spaces)
 
 parseExpr :: Text -> Either ParseError Expr
-parseExpr = runParser expr () ""
+parseExpr = runParser (do res <- expr; eof; pure res) () ""

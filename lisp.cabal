@@ -31,6 +31,7 @@ executable lisp
     default-extensions: OverloadedStrings
                       , PatternSynonyms
                       , Strict
+                      , BlockArguments
     build-depends:    base ^>=4.14.1.0
                     , text 
                     , containers
