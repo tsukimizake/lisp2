@@ -21,11 +21,45 @@ maintainer:         shomasd@gmail.com
 -- category:
 extra-source-files: CHANGELOG.md
 
+
+library 
+  exposed-modules: Eval, Parser, Types
+  hs-source-dirs:   src
+  build-depends:    base ^>=4.14.1.0
+                    , text 
+                    , containers
+                    , parsec
+                    , record-hasfield
+  -- LANGUAGE extensions used by modules in this package.
+  default-extensions: OverloadedStrings
+                    , PatternSynonyms
+                    , Strict
+                    , BlockArguments
+  default-language: Haskell2010
+
+
+
+test-suite example-test
+  type:             exitcode-stdio-1.0
+  main-is:          Spec.hs
+  hs-source-dirs:   test
+  other-modules:    EvalSpec
+
+  -- LANGUAGE extensions used by modules in this package.
+  default-extensions: OverloadedStrings
+                    , PatternSynonyms
+                    , Strict
+                    , BlockArguments
+  build-depends:
+    , base     >=4.7 && <5
+    , lisp
+
+  default-language: Haskell2010
+
+
 executable lisp
     main-is:          Main.hs
 
-    -- Modules included in this executable, other than Main.
-    other-modules: Parser, Types
 
     -- LANGUAGE extensions used by modules in this package.
     default-extensions: OverloadedStrings
@@ -37,6 +71,9 @@ executable lisp
                     , containers
                     , parsec
                     , record-hasfield
+                    , lisp
 
     hs-source-dirs:   app
     default-language: Haskell2010
+
+
