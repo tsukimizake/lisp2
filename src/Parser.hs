@@ -21,10 +21,10 @@ tp =
         nestedComments = False,
         identStart = letter,
         identLetter = letter <|> char '-' <|> char '?',
-        opStart = oneOf "!#$%&|*+-/<=>?@^_~:",
-        opLetter = oneOf "!#$%&|*+-/<=>?@^_~:",
+        opStart = oneOf "!#$%&|*+-/<=>?@^_~:'",
+        opLetter = oneOf "!#$%&|*+-/<=>?@^_~:'",
         reservedNames = [],
-        reservedOpNames = [":"],
+        reservedOpNames = [":", "'"],
         caseSensitive = True
       }
 
@@ -32,6 +32,7 @@ expr :: Parser Expr
 expr =
   try (parens tp do val <- expr; reservedOp tp ":"; type_ <- expr; pure val) -- typed expr parser (not used yet)
     <|> Atom . T.pack <$> identifier tp
+    <|> do reservedOp tp "'"; (List cdr) <- parens tp (List <$> sepBy1 expr spaces); pure $ List (Atom "quote" : cdr)
     <|> Atom . T.pack <$> operator tp
     <|> Constant . Num . fromIntegral <$> integer tp
     <|> Constant . Str . T.pack <$> stringLiteral tp
