@@ -71,7 +71,7 @@ eval env (OpList x xs) = do
   x' <- eval env x
   case x' of
     Atom a -> evalBuiltinOp env a xs'
-    _ -> Left "TODO: non-atom function"
+    x -> Left $ "TODO: non-atom function " <> showText x
 
 safe :: ([a] -> b) -> [a] -> Maybe b
 safe _ [] = Nothing
@@ -91,7 +91,8 @@ evalCond env key clauses = do
   key' <- eval env key
   case condHead (\(List (List matches : _)) -> key' `elem` matches) clauses of
     Nothing -> pure nil
-    Just x -> eval env x
+    Just (List (cond : body)) -> eval env (List body)
+    Just x -> Left $ "malformed cond " <> showText x
 
 evalCompOp :: Env -> (Int -> Int -> Bool) -> [Expr] -> Either Error Expr
 evalCompOp env op args = do

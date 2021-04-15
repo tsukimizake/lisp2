@@ -1,6 +1,7 @@
 module Main where
 
 import Control.Monad
+import Data.IORef
 import qualified Data.List as L
 import qualified Data.Map as M
 import Data.Text (Text)
@@ -16,8 +17,9 @@ run input = do
   let parsed = parseExpr input
   case parsed of
     Left err -> print err
-    Right x ->
-      print $ eval M.empty x
+    Right x -> do
+      init <- newIORef []
+      print $ eval init x
 
 main :: IO ()
 main = do

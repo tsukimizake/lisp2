@@ -1,5 +1,6 @@
 module Types where
 
+import Data.IORef
 import Data.Map
 import Data.Text
 
@@ -13,7 +14,7 @@ data TypeTag = Number | Strng deriving (Show, Eq)
 
 type Sym = Text
 
-type Env = Map Sym Expr
+type Env = IORef [Map Sym (IORef Expr)]
 
 data Expr
   = Constant Value
