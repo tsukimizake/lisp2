@@ -1,6 +1,9 @@
 module Eval where
 
 import Control.Monad
+import Data.IORef
+import qualified Data.Map as M
+import Data.Maybe
 import Data.Text (Text)
 import qualified Data.Text as T
 import Types
@@ -101,6 +104,15 @@ evalCompOp env op args = do
         l' <- coerceNum l
         pure . B $ op l' r
   evalInfix env op' args coerceNum
+
+traverseEnv :: Env -> (SymTable -> IO (Maybe a)) -> IO (Maybe a)
+traverseEnv envRef action = do
+  env <- readIORef envRef
+  listToMaybe . catMaybes <$> mapM action env
+
+isBound :: Env -> Sym -> IO Bool
+isBound envRef var = do
+  isJust <$> traverseEnv envRef (pure . M.lookup var)
 
 evalBoolOp :: Env -> (Bool -> Bool -> Bool) -> [Expr] -> Either Error Expr
 evalBoolOp env op args = do
