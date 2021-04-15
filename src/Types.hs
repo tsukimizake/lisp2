@@ -2,7 +2,7 @@ module Types where
 
 import Control.Monad.Except
 import Data.IORef
-import Data.Map
+import Data.Map as M
 import Data.Text
 
 data Value
@@ -15,12 +15,10 @@ data TypeTag = Number | Strng deriving (Show, Eq)
 
 type Sym = Text
 
-type SymTable = Map Sym (IORef Expr)
-
-type Env = IORef [SymTable]
+type Env = IORef (Map Sym (IORef Expr))
 
 nullEnv :: IO Env
-nullEnv = newIORef []
+nullEnv = newIORef M.empty
 
 data Expr
   = Constant Value

@@ -1,6 +1,8 @@
 module Eval where
 
 import Control.Monad
+import Control.Monad.Except
+import Control.Monad.IO.Class
 import Data.IORef
 import qualified Data.Map as M
 import Data.Maybe
@@ -105,14 +107,18 @@ evalCompOp env op args = do
         pure . B $ op l' r
   evalInfix env op' args coerceNum
 
-traverseEnv :: Env -> (SymTable -> IO (Maybe a)) -> IO (Maybe a)
-traverseEnv envRef action = do
-  env <- readIORef envRef
-  listToMaybe . catMaybes <$> mapM action env
-
 isBound :: Env -> Sym -> IO Bool
 isBound envRef var = do
-  isJust <$> traverseEnv envRef (pure . M.lookup var)
+  env <- readIORef envRef
+  pure . isJust $ M.lookup var env
+
+getVar :: Env -> Sym -> IOThrowsError Expr
+getVar envRef var = do
+  env <- liftIO $ readIORef envRef
+  maybe
+    (throwError $ "Getting an unbound variable " <> var)
+    (liftIO . readIORef)
+    (M.lookup var env)
 
 evalBoolOp :: Env -> (Bool -> Bool -> Bool) -> [Expr] -> Either Error Expr
 evalBoolOp env op args = do

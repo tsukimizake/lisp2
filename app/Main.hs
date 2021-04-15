@@ -18,7 +18,7 @@ run input = do
   case parsed of
     Left err -> print err
     Right x -> do
-      init <- newIORef []
+      init <- newIORef M.empty
       print $ eval init x
 
 main :: IO ()
