@@ -10,18 +10,32 @@ import Debug.Trace
 import Eval
 import Parser
 import System.Environment
+import System.IO
 import Types
 
-run :: Text -> IO ()
-run input = do
+runOne :: Env -> Text -> IO ()
+runOne env input = do
   let parsed = parseExpr input
   case parsed of
     Left err -> print err
     Right x -> do
-      init <- newIORef M.empty
-      print $ eval init x
+      print =<< runIOThrows (eval env x)
+
+runRepl :: Env -> IO ()
+runRepl env =
+  forever do
+    putStr "> "
+    hFlush stdout
+    input <- getLine
+    runOne env . T.pack $ input
+    pure ()
 
 main :: IO ()
 main = do
   xs <- System.Environment.getArgs
-  run . T.pack . head $ xs
+  init <- newIORef M.empty
+  case length xs of
+    1 -> do
+      runOne init . T.pack . head $ xs
+    _ ->
+      runRepl init
