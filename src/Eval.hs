@@ -8,6 +8,7 @@ import qualified Data.Map as M
 import Data.Maybe
 import Data.Text (Text)
 import qualified Data.Text as T
+import Debug.Trace
 import Types
 
 showText :: (Show a) => a -> Text
@@ -16,18 +17,18 @@ showText = T.pack . show
 typeError :: Text -> Expr -> Text
 typeError expected actual = "type error, " <> expected <> " expected on " <> showText actual
 
-coerceNum :: Expr -> Either Error Int
+coerceNum :: Expr -> IOThrowsError Int
 coerceNum (N v) = pure v
-coerceNum x = Left $ typeError "num" x
+coerceNum x = throwError $ typeError "num" x
 
-coerceBool :: Expr -> Either Error Bool
+coerceBool :: Expr -> IOThrowsError Bool
 coerceBool (B v) = pure v
-coerceBool e = Left $ typeError "bool" e
+coerceBool e = throwError $ typeError "bool" e
 
-evalInfix :: Env -> (Expr -> a -> Either Error Expr) -> [Expr] -> (Expr -> Either Error a) -> Either Error Expr
+evalInfix :: Env -> (Expr -> a -> IOThrowsError Expr) -> [Expr] -> (Expr -> IOThrowsError a) -> IOThrowsError Expr
 evalInfix env op args coerce = do
   if null args
-    then Left "no arg"
+    then throwError "no arg"
     else do
       let (h : t) = args
       foldM
@@ -38,9 +39,9 @@ evalInfix env op args coerce = do
         h
         t
 
-evalMath :: Env -> (Int -> Int -> Int) -> [Expr] -> Either Error Expr
+evalMath :: Env -> (Int -> Int -> Int) -> [Expr] -> IOThrowsError Expr
 evalMath env op args = do
-  let op' :: Expr -> Int -> Either Error Expr
+  let op' :: Expr -> Int -> IOThrowsError Expr
       op' l r = do
         l' <- coerceNum l
         pure . Constant . Num $ op l' r
@@ -56,9 +57,8 @@ pattern B x = Constant (Bool x)
 
 pattern S x = Constant (Str x)
 
-eval :: Env -> Expr -> Either Error Expr
+eval :: Env -> Expr -> IOThrowsError Expr
 eval env v@(Constant _) = pure v
-eval _ x@(Atom _) = pure x
 eval _ (QuoteList xs) = pure $ List xs
 eval env (List [Atom "if", pred, t, f]) = do
   pred' <- eval env pred
@@ -69,6 +69,10 @@ eval env (List (Atom "cond" : key : clauses)) =
   evalCond env key clauses
 eval env (List []) = do
   pure nil
+eval env (List [Atom "set!", Atom var, form]) =
+  eval env form >>= setVar env var
+eval env (List [Atom "define", Atom var, form]) =
+  eval env form >>= defineVar env var
 eval env (List [x]) = do
   eval env x
 eval env (OpList x xs) = do
@@ -76,7 +80,12 @@ eval env (OpList x xs) = do
   x' <- eval env x
   case x' of
     Atom a -> evalBuiltinOp env a xs'
-    x -> Left $ "TODO: non-atom function " <> showText x
+    x -> throwError $ "TODO: non-atom function " <> showText x
+eval env (Atom x) = do
+  bound <- isBound env x
+  if bound
+    then getVar env x
+    else pure (Atom x)
 
 -- read/write env
 
@@ -88,26 +97,37 @@ maybeToEither :: e -> Maybe a -> Either e a
 maybeToEither err Nothing = Left err
 maybeToEither _ (Just x) = Right x
 
-evalCond :: Env -> Expr -> [Expr] -> Either Error Expr
+evalCond :: Env -> Expr -> [Expr] -> IOThrowsError Expr
 evalCond env key clauses = do
   key' <- eval env key
   case condHead (\(List (List matches : _)) -> key' `elem` matches) clauses of
     Nothing -> pure nil
     Just (List (cond : body)) -> eval env (List body)
-    Just x -> Left $ "malformed cond " <> showText x
+    Just x -> throwError $ "malformed cond " <> showText x
 
-evalCompOp :: Env -> (Int -> Int -> Bool) -> [Expr] -> Either Error Expr
+evalCompOp :: Env -> (Int -> Int -> Bool) -> [Expr] -> IOThrowsError Expr
 evalCompOp env op args = do
-  let op' :: Expr -> Int -> Either Error Expr
+  let op' :: Expr -> Int -> IOThrowsError Expr
       op' l r = do
         l' <- coerceNum l
         pure . B $ op l' r
   evalInfix env op' args coerceNum
 
-isBound :: Env -> Sym -> IO Bool
+isBound :: Env -> Sym -> IOThrowsError Bool
 isBound envRef var = do
-  env <- readIORef envRef
+  env <- liftIO $ readIORef envRef
   pure . isJust $ M.lookup var env
+
+defineVar :: Env -> Text -> Expr -> IOThrowsError Expr
+defineVar envRef var value = do
+  alreadyDefined <- isBound envRef var
+  if alreadyDefined
+    then setVar envRef var value >> return value
+    else liftIO $ do
+      valueRef <- newIORef value
+      env <- readIORef envRef
+      writeIORef envRef (M.insert var valueRef env)
+      return value
 
 getVar :: Env -> Sym -> IOThrowsError Expr
 getVar envRef var = do
@@ -143,15 +163,15 @@ condHead :: (a -> Bool) -> [a] -> Maybe a
 condHead predicate xs =
   safe head $ dropWhile (not . predicate) xs
 
-evalBoolOp :: Env -> (Bool -> Bool -> Bool) -> [Expr] -> Either Error Expr
+evalBoolOp :: Env -> (Bool -> Bool -> Bool) -> [Expr] -> IOThrowsError Expr
 evalBoolOp env op args = do
-  let op' :: Expr -> Bool -> Either Error Expr
+  let op' :: Expr -> Bool -> IOThrowsError Expr
       op' l r = do
         l' <- coerceBool l
         pure . B $ op l' r
   evalInfix env op' args coerceBool
 
-evalBuiltinOp :: Env -> Sym -> [Expr] -> Either Error Expr
+evalBuiltinOp :: Env -> Sym -> [Expr] -> IOThrowsError Expr
 evalBuiltinOp env "+" args = evalMath env (+) args
 evalBuiltinOp env "-" args = evalMath env (-) args
 evalBuiltinOp env "*" args = evalMath env (*) args
@@ -174,7 +194,7 @@ evalBuiltinOp env "cdr" [List (_ : xs)] = pure $ List xs
 evalBuiltinOp env "symbol-to-string" [Atom x] = pure . S $ x
 evalBuiltinOp env "string-to-symbol" [Constant (Str x)] = pure $ Atom x
 evalBuiltinOp env "eq?" [x, y] = pure $ B $ x == y
-evalBuiltinOp env op args = Left $ "not implemented: " <> showText op <> " " <> showText args
+evalBuiltinOp env op args = throwError $ "not implemented: " <> showText op <> " " <> showText args
 
 nil :: Expr
 nil = List []
