@@ -78,14 +78,11 @@ eval env (OpList x xs) = do
     Atom a -> evalBuiltinOp env a xs'
     x -> Left $ "TODO: non-atom function " <> showText x
 
+-- read/write env
+
 safe :: ([a] -> b) -> [a] -> Maybe b
 safe _ [] = Nothing
 safe f xs = Just $ f xs
-
--- predicateが初めて満たされたやつを返す
-condHead :: (a -> Bool) -> [a] -> Maybe a
-condHead predicate xs =
-  safe head $ dropWhile (not . predicate) xs
 
 maybeToEither :: e -> Maybe a -> Either e a
 maybeToEither err Nothing = Left err
@@ -119,6 +116,32 @@ getVar envRef var = do
     (throwError $ "Getting an unbound variable " <> var)
     (liftIO . readIORef)
     (M.lookup var env)
+
+setVar :: Env -> Sym -> Expr -> IOThrowsError Expr
+setVar envRef var val = do
+  env <- liftIO $ readIORef envRef
+  maybe
+    (throwError $ "Setting an unbound variable " <> var)
+    (liftIO . flip writeIORef val)
+    (M.lookup var env)
+  pure val
+
+bindVars :: Env -> [(Sym, Expr)] -> IO Env
+bindVars envRef bindings = readIORef envRef >>= extendEnv bindings >>= newIORef
+  where
+    extendEnv :: [(Sym, Expr)] -> M.Map Sym (IORef Expr) -> IO (M.Map Sym (IORef Expr))
+    extendEnv bindings env = M.fromList <$> mapM addBinding bindings -- TODO 毎回fromListで詰め替えたくない
+    addBinding :: (Sym, Expr) -> IO (Sym, IORef Expr)
+    addBinding (var, value) = do
+      ref <- newIORef value
+      return (var, ref)
+
+-- builtins
+
+-- predicateが初めて満たされたやつを返す
+condHead :: (a -> Bool) -> [a] -> Maybe a
+condHead predicate xs =
+  safe head $ dropWhile (not . predicate) xs
 
 evalBoolOp :: Env -> (Bool -> Bool -> Bool) -> [Expr] -> Either Error Expr
 evalBoolOp env op args = do
