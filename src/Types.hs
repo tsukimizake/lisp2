@@ -32,3 +32,13 @@ type IOThrowsError = ExceptT Error IO
 
 runIOThrows :: IOThrowsError a -> IO (Either Error a)
 runIOThrows = runExceptT
+
+pattern OpList x xs = (List (x : xs))
+
+pattern QuoteList xs = OpList (Atom "quote") xs
+
+pattern N x = Constant (Num x)
+
+pattern B x = Constant (Bool x)
+
+pattern S x = Constant (Str x)

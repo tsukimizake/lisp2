@@ -1,4 +1,10 @@
 module EvalSpec where
 
+import Eval
+import Parser
+import Test.Hspec
+
 spec :: Spec
-spec = undefined
+spec = describe "eval" do
+  it "can eval" do
+    1 `shouldBe` 1

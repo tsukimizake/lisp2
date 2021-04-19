@@ -39,6 +39,7 @@ evalInfix env op args coerce = do
         h
         t
 
+-- BUG: (- 1) => 1. use foldl?
 evalMath :: Env -> (Int -> Int -> Int) -> [Expr] -> IOThrowsError Expr
 evalMath env op args = do
   let op' :: Expr -> Int -> IOThrowsError Expr
@@ -46,16 +47,6 @@ evalMath env op args = do
         l' <- coerceNum l
         pure . Constant . Num $ op l' r
   evalInfix env op' args coerceNum
-
-pattern OpList x xs = (List (x : xs))
-
-pattern QuoteList xs = OpList (Atom "quote") xs
-
-pattern N x = Constant (Num x)
-
-pattern B x = Constant (Bool x)
-
-pattern S x = Constant (Str x)
 
 eval :: Env -> Expr -> IOThrowsError Expr
 eval env v@(Constant _) = pure v
@@ -150,7 +141,7 @@ bindVars :: Env -> [(Sym, Expr)] -> IO Env
 bindVars envRef bindings = readIORef envRef >>= extendEnv bindings >>= newIORef
   where
     extendEnv :: [(Sym, Expr)] -> M.Map Sym (IORef Expr) -> IO (M.Map Sym (IORef Expr))
-    extendEnv bindings env = M.fromList <$> mapM addBinding bindings -- TODO 毎回fromListで詰め替えたくない
+    extendEnv bindings env = M.fromList <$> mapM addBinding bindings
     addBinding :: (Sym, Expr) -> IO (Sym, IORef Expr)
     addBinding (var, value) = do
       ref <- newIORef value
@@ -194,6 +185,7 @@ evalBuiltinOp env "cdr" [List (_ : xs)] = pure $ List xs
 evalBuiltinOp env "symbol-to-string" [Atom x] = pure . S $ x
 evalBuiltinOp env "string-to-symbol" [Constant (Str x)] = pure $ Atom x
 evalBuiltinOp env "eq?" [x, y] = pure $ B $ x == y
+evalBuiltinOp env "begin" xs = last <$> mapM (eval env) xs -- TODO O(n)
 evalBuiltinOp env op args = throwError $ "not implemented: " <> showText op <> " " <> showText args
 
 nil :: Expr

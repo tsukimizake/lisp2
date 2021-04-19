@@ -32,9 +32,10 @@ expr :: Parser Expr
 expr =
   try (parens tp do val <- expr; reservedOp tp ":"; type_ <- expr; pure val) -- typed expr parser (not used yet)
     <|> Atom . T.pack <$> identifier tp
+    <|> try (do string "- "; pure $ Atom "-")
     <|> do reservedOp tp "'"; (List cdr) <- parens tp (List <$> sepBy1 expr spaces); pure $ List (Atom "quote" : cdr)
+    <|> try (Constant . Num . fromIntegral <$> integer tp)
     <|> Atom . T.pack <$> operator tp
-    <|> Constant . Num . fromIntegral <$> integer tp
     <|> Constant . Str . T.pack <$> stringLiteral tp
     <|> parens tp (List <$> sepBy1 expr spaces)
 
