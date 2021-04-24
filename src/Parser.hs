@@ -33,6 +33,7 @@ expr =
   try (parens tp do val <- expr; reservedOp tp ":"; type_ <- expr; pure val) -- typed expr parser (not used yet)
     <|> Atom . T.pack <$> identifier tp
     <|> try (do string "- "; pure $ Atom "-") -- integer tp は "- 1"も-1にパースするが、これは嬉しくないのでキャッチして-にしてしまう
+    <|> try (do string "+ "; pure $ Atom "+") -- 上と同様
     <|> do reservedOp tp "'"; (List cdr) <- parens tp (List <$> sepBy1 expr spaces); pure $ List (Atom "quote" : cdr)
     <|> try (Constant . Num . fromIntegral <$> integer tp)
     <|> Atom . T.pack <$> operator tp
