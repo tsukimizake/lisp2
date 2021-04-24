@@ -40,13 +40,16 @@ evalInfix env op args coerce = do
         t
 
 -- BUG: (- 1) => 1. use foldl?
-evalMath :: Env -> (Int -> Int -> Int) -> [Expr] -> IOThrowsError Expr
-evalMath env op args = do
+evalMath :: Env -> Maybe Int -> (Int -> Int -> Int) -> [Expr] -> IOThrowsError Expr
+evalMath env init op args = do
   let op' :: Expr -> Int -> IOThrowsError Expr
       op' l r = do
         l' <- coerceNum l
         pure . Constant . Num $ op l' r
-  evalInfix env op' args coerceNum
+      args' = case init of
+        Just x -> N x : args
+        _ -> args
+  evalInfix env op' args' coerceNum
 
 eval :: Env -> Expr -> IOThrowsError Expr
 eval env v@(Constant _) = pure v
@@ -163,10 +166,10 @@ evalBoolOp env op args = do
   evalInfix env op' args coerceBool
 
 evalBuiltinOp :: Env -> Sym -> [Expr] -> IOThrowsError Expr
-evalBuiltinOp env "+" args = evalMath env (+) args
-evalBuiltinOp env "-" args = evalMath env (-) args
-evalBuiltinOp env "*" args = evalMath env (*) args
-evalBuiltinOp env "/" args = evalMath env div args -- TODO devide by zero error
+evalBuiltinOp env "+" args = evalMath env Nothing (+) args
+evalBuiltinOp env "-" args = evalMath env (Just 0) (-) args
+evalBuiltinOp env "*" args = evalMath env Nothing (*) args
+evalBuiltinOp env "/" args = evalMath env Nothing div args -- TODO devide by zero error
 evalBuiltinOp env "=" args = evalCompOp env (==) args
 evalBuiltinOp env "/=" args = evalCompOp env (/=) args
 evalBuiltinOp env "<" args = evalCompOp env (<) args
