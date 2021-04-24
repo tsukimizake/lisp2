@@ -14,7 +14,9 @@ spec :: Spec
 spec = describe "" do
   it "parse math" do
     testParser "(+ 1)" (List [Atom "+", N 1])
-    testParser "(+ 1 -1)" (List [Atom "+", N 1, N (-1)])
+    testParser "(* 1)" (List [Atom "*", N 1])
+    testParser "(/ 1)" (List [Atom "/", N 1])
+    testParser "(+ +1 -1)" (List [Atom "+", N 1, N (-1)])
   it "parse negative int" do
     testParser "-1" (N (-1))
     testParser "(-1)" (List [N (-1)])
