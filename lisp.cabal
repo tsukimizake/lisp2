@@ -31,6 +31,7 @@ library
                     , parsec
                     , record-hasfield
                     , mtl
+                    , record-dot-preprocessor
   -- LANGUAGE extensions used by modules in this package.
   default-extensions: OverloadedStrings
                     , PatternSynonyms
