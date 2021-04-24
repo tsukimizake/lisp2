@@ -2,8 +2,10 @@ module Types where
 
 import Control.Monad.Except
 import Data.IORef
-import Data.Map as M
-import Data.Text
+import Data.Map (Map)
+import qualified Data.Map as M
+import Data.Text (Text)
+import qualified Data.Text as T
 
 data Value
   = Num Int
@@ -24,7 +26,26 @@ data Expr
   = Constant Value
   | Atom Text
   | List [Expr]
-  deriving (Show, Eq)
+  | PrimitiveFunc [Expr -> IOThrowsError Expr]
+  | Func {params :: [Text], vararg :: Maybe Text, body :: [Expr], closure :: Env}
+
+showText :: (Show a) => a -> Text
+showText = T.pack . show
+
+instance Show Expr where
+  show x = case x of
+    Constant x -> show x
+    Atom x -> T.unpack x
+    List xs -> T.unpack $ "(" <> T.intercalate " " (map showText xs) <> ")"
+    PrimitiveFunc _ -> "<primitive>"
+    Func {} -> "<func>"
+
+instance Eq Expr where
+  l == r = case (l, r) of
+    (Atom a, Atom b) -> a == b
+    (Constant a, Constant b) -> a == b
+    (List a, List b) -> a == b
+    input -> error $ "invalid eq comparison " ++ show input
 
 type Error = Text
 

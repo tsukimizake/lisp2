@@ -11,9 +11,6 @@ import qualified Data.Text as T
 import Debug.Trace
 import Types
 
-showText :: (Show a) => a -> Text
-showText = T.pack . show
-
 typeError :: Text -> Expr -> Text
 typeError expected actual = "type error, " <> expected <> " expected on " <> showText actual
 
