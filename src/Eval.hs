@@ -36,7 +36,6 @@ evalInfix env op args coerce = do
         h
         t
 
--- BUG: (- 1) => 1. use foldl?
 evalMath :: Env -> Maybe Int -> (Int -> Int -> Int) -> [Expr] -> IOThrowsError Expr
 evalMath env init op args = do
   let op' :: Expr -> Int -> IOThrowsError Expr
