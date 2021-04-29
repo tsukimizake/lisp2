@@ -1,3 +1,5 @@
+{-# LANGUAGE NamedFieldPuns #-}
+
 module Types where
 
 import Control.Monad.Except
@@ -11,7 +13,13 @@ data Value
   = Num Int
   | Str Text
   | Bool Bool
-  deriving (Show, Eq)
+  deriving (Eq)
+
+instance Show Value where
+  show (Num x) = show x
+  show (Str s) = T.unpack s
+  show (Bool True) = "#t"
+  show (Bool False) = "#f"
 
 data TypeTag = Number | Strng deriving (Show, Eq)
 
@@ -26,8 +34,7 @@ data Expr
   = Constant Value
   | Atom Text
   | List [Expr]
-  | PrimitiveFunc [Expr -> IOThrowsError Expr]
-  | Func {params :: [Text], vararg :: Maybe Text, body :: [Expr], closure :: Env}
+  | Func {params :: [Text], body :: [Expr], closure :: Env}
 
 showText :: (Show a) => a -> Text
 showText = T.pack . show
@@ -37,8 +44,7 @@ instance Show Expr where
     Constant x -> show x
     Atom x -> T.unpack x
     List xs -> T.unpack $ "(" <> T.intercalate " " (map showText xs) <> ")"
-    PrimitiveFunc _ -> "<primitive>"
-    Func {} -> "<func>"
+    Func {params, body} -> T.unpack $ "(lambda (" <> T.unwords params <> ")" <> T.intercalate " " (map showText body) <> ")"
 
 instance Eq Expr where
   l == r = case (l, r) of

@@ -47,6 +47,18 @@ evalMath env init op args = do
         _ -> args
   evalInfix env op' args' coerceNum
 
+apply :: Expr -> [Expr] -> IOThrowsError Expr
+apply (Func params body closure) args =
+  if length params /= length args
+    then throwError $ "num params invalid " <> showText (length params) <> " " <> showText args
+    else liftIO (bindVars closure $ zip params args) >>= evalBody
+  where
+    remainingArgs = drop (length params) args
+    evalBody env = last <$> mapM (eval env) body
+
+makeFunc :: (Monad m) => Env -> [Expr] -> [Expr] -> m Expr
+makeFunc env args body = return $ Func (map showText args) body env
+
 eval :: Env -> Expr -> IOThrowsError Expr
 eval env v@(Constant _) = pure v
 eval _ (QuoteList xs) = pure $ List xs
@@ -63,13 +75,23 @@ eval env (List [Atom "set!", Atom var, form]) =
   eval env form >>= setVar env var
 eval env (List [Atom "define", Atom var, form]) =
   eval env form >>= defineVar env var
+eval env (List [Atom "define", List (Atom var : args), form]) =
+  makeFunc env args [form] >>= defineVar env var
+eval env (List (Atom "lambda" : List params : body)) =
+  makeFunc env params body
 eval env (List [x]) = do
   eval env x
+--eval env (List (function : args)) = do
+--  func <- eval env function
+--  argVals <- mapM (eval env) args
+--  traceShowM func
+--  traceShowM argVals
+--  apply func argVals
 eval env (OpList x xs) = do
   xs' <- mapM (eval env) xs
   x' <- eval env x
   case x' of
-    Atom a -> evalBuiltinOp env a xs'
+    Atom a -> evalBuiltinOp env a xs' -- call apply here!
     x -> throwError $ "TODO: non-atom function " <> showText x
 eval env (Atom x) = do
   bound <- isBound env x
