@@ -22,8 +22,8 @@ coerceBool :: Expr -> IOThrowsError Bool
 coerceBool (B v) = pure v
 coerceBool e = throwError $ typeError "bool" e
 
-evalInfix :: Env -> (Expr -> a -> IOThrowsError Expr) -> [Expr] -> (Expr -> IOThrowsError a) -> IOThrowsError Expr
-evalInfix env op args coerce = do
+evalInfix :: (Expr -> a -> IOThrowsError Expr) -> [Expr] -> (Expr -> IOThrowsError a) -> IOThrowsError Expr
+evalInfix op args coerce = do
   if null args
     then throwError "no arg"
     else do
@@ -36,8 +36,8 @@ evalInfix env op args coerce = do
         h
         t
 
-evalMath :: Env -> Maybe Int -> (Int -> Int -> Int) -> [Expr] -> IOThrowsError Expr
-evalMath env init op args = do
+evalMath :: Maybe Int -> (Int -> Int -> Int) -> [Expr] -> IOThrowsError Expr
+evalMath init op args = do
   let op' :: Expr -> Int -> IOThrowsError Expr
       op' l r = do
         l' <- coerceNum l
@@ -45,9 +45,31 @@ evalMath env init op args = do
       args' = case init of
         Just x -> N x : args
         _ -> args
-  evalInfix env op' args' coerceNum
+  evalInfix op' args' coerceNum
 
 apply :: Expr -> [Expr] -> IOThrowsError Expr
+apply (Atom "+") args = evalMath Nothing (+) args
+apply (Atom "-") args = evalMath (Just 0) (-) args
+apply (Atom "*") args = evalMath Nothing (*) args
+apply (Atom "/") args = evalMath Nothing div args -- TODO devide by zero error
+apply (Atom "=") args = evalCompOp (==) args
+apply (Atom "/=") args = evalCompOp (/=) args
+apply (Atom "<") args = evalCompOp (<) args
+apply (Atom ">") args = evalCompOp (>) args
+apply (Atom "<=") args = evalCompOp (<=) args
+apply (Atom ">=") args = evalCompOp (>=) args
+apply (Atom "||") args = evalBoolOp (||) args
+apply (Atom "symbol?") [Atom _] = pure $ B True
+apply (Atom "symbol?") _ = pure $ B False
+apply (Atom "string?") [Constant (Str _)] = pure $ B True
+apply (Atom "string?") _ = pure $ B False
+apply (Atom "number?") [Constant (Num _)] = pure $ B True
+apply (Atom "number?") _ = pure $ B False
+apply (Atom "car") [List (x : _)] = pure x
+apply (Atom "cdr") [List (_ : xs)] = pure $ List xs
+apply (Atom "symbol-to-string") [Atom x] = pure . S $ x
+apply (Atom "string-to-symbol") [Constant (Str x)] = pure $ Atom x
+apply (Atom "eq?") [x, y] = pure $ B $ x == y
 apply (Func params body closure) args =
   if length params /= length args
     then throwError $ "num params invalid " <> showText (length params) <> " " <> showText args
@@ -55,6 +77,7 @@ apply (Func params body closure) args =
   where
     remainingArgs = drop (length params) args
     evalBody env = last <$> mapM (eval env) body
+apply op args = throwError $ "not implemented: " <> showText op <> " " <> showText args
 
 makeFunc :: (Monad m) => Env -> [Expr] -> [Expr] -> m Expr
 makeFunc env args body = return $ Func (map showText args) body env
@@ -87,12 +110,12 @@ eval env (List [x]) = do
 --  traceShowM func
 --  traceShowM argVals
 --  apply func argVals
+eval env (OpList (Atom "begin") args) =
+  last <$> mapM (eval env) args -- TODO O(n)
 eval env (OpList x xs) = do
   xs' <- mapM (eval env) xs
   x' <- eval env x
-  case x' of
-    Atom a -> evalBuiltinOp env a xs' -- call apply here!
-    x -> throwError $ "TODO: non-atom function " <> showText x
+  apply x' xs'
 eval env (Atom x) = do
   bound <- isBound env x
   if bound
@@ -117,13 +140,13 @@ evalCond env key clauses = do
     Just (List (cond : body)) -> eval env (List body)
     Just x -> throwError $ "malformed cond " <> showText x
 
-evalCompOp :: Env -> (Int -> Int -> Bool) -> [Expr] -> IOThrowsError Expr
-evalCompOp env op args = do
+evalCompOp :: (Int -> Int -> Bool) -> [Expr] -> IOThrowsError Expr
+evalCompOp op args = do
   let op' :: Expr -> Int -> IOThrowsError Expr
       op' l r = do
         l' <- coerceNum l
         pure . B $ op l' r
-  evalInfix env op' args coerceNum
+  evalInfix op' args coerceNum
 
 isBound :: Env -> Sym -> IOThrowsError Bool
 isBound envRef var = do
@@ -175,39 +198,13 @@ condHead :: (a -> Bool) -> [a] -> Maybe a
 condHead predicate xs =
   safe head $ dropWhile (not . predicate) xs
 
-evalBoolOp :: Env -> (Bool -> Bool -> Bool) -> [Expr] -> IOThrowsError Expr
-evalBoolOp env op args = do
+evalBoolOp :: (Bool -> Bool -> Bool) -> [Expr] -> IOThrowsError Expr
+evalBoolOp op args = do
   let op' :: Expr -> Bool -> IOThrowsError Expr
       op' l r = do
         l' <- coerceBool l
         pure . B $ op l' r
-  evalInfix env op' args coerceBool
-
-evalBuiltinOp :: Env -> Sym -> [Expr] -> IOThrowsError Expr
-evalBuiltinOp env "+" args = evalMath env Nothing (+) args
-evalBuiltinOp env "-" args = evalMath env (Just 0) (-) args
-evalBuiltinOp env "*" args = evalMath env Nothing (*) args
-evalBuiltinOp env "/" args = evalMath env Nothing div args -- TODO devide by zero error
-evalBuiltinOp env "=" args = evalCompOp env (==) args
-evalBuiltinOp env "/=" args = evalCompOp env (/=) args
-evalBuiltinOp env "<" args = evalCompOp env (<) args
-evalBuiltinOp env ">" args = evalCompOp env (>) args
-evalBuiltinOp env "<=" args = evalCompOp env (<=) args
-evalBuiltinOp env ">=" args = evalCompOp env (>=) args
-evalBuiltinOp env "||" args = evalBoolOp env (||) args
-evalBuiltinOp env "symbol?" [Atom _] = pure $ B True
-evalBuiltinOp env "symbol?" _ = pure $ B False
-evalBuiltinOp env "string?" [Constant (Str _)] = pure $ B True
-evalBuiltinOp env "string?" _ = pure $ B False
-evalBuiltinOp env "number?" [Constant (Num _)] = pure $ B True
-evalBuiltinOp env "number?" _ = pure $ B False
-evalBuiltinOp env "car" [List (x : _)] = pure x
-evalBuiltinOp env "cdr" [List (_ : xs)] = pure $ List xs
-evalBuiltinOp env "symbol-to-string" [Atom x] = pure . S $ x
-evalBuiltinOp env "string-to-symbol" [Constant (Str x)] = pure $ Atom x
-evalBuiltinOp env "eq?" [x, y] = pure $ B $ x == y
-evalBuiltinOp env "begin" xs = last <$> mapM (eval env) xs -- TODO O(n)
-evalBuiltinOp env op args = throwError $ "not implemented: " <> showText op <> " " <> showText args
+  evalInfix op' args coerceBool
 
 nil :: Expr
 nil = List []
