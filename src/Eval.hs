@@ -112,7 +112,7 @@ eval env (List [x]) = do
 --  traceShowM argVals
 --  apply func argVals
 eval env (OpList (Atom "begin") args) =
-  last <$> mapM (eval env) args -- TODO O(n)
+  last <$> mapM (eval env) args
 eval env (OpList x xs) = do
   xs' <- mapM (eval env) xs
   x' <- eval env x
