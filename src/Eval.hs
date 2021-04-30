@@ -47,6 +47,7 @@ evalMath init op args = do
         _ -> args
   evalInfix op' args' coerceNum
 
+-- TODO use PrimitiveFunc Map
 apply :: Expr -> [Expr] -> IOThrowsError Expr
 apply (Atom "+") args = evalMath Nothing (+) args
 apply (Atom "-") args = evalMath (Just 0) (-) args
