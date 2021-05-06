@@ -35,6 +35,7 @@ data Expr
   | Atom Text
   | List [Expr]
   | Func {params :: [Text], body :: [Expr], closure :: Env}
+  | Prim {name :: Text, op :: [Expr] -> IOThrowsError Expr}
 
 showText :: (Show a) => a -> Text
 showText = T.pack . show
@@ -45,6 +46,7 @@ instance Show Expr where
     Atom x -> T.unpack x
     List xs -> T.unpack $ "(" <> T.intercalate " " (map showText xs) <> ")"
     Func {params, body} -> T.unpack $ "(lambda (" <> T.unwords params <> ")" <> T.intercalate " " (map showText body) <> ")"
+    Prim {name} -> T.unpack name
 
 instance Eq Expr where
   l == r = case (l, r) of
