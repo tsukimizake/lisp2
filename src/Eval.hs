@@ -6,6 +6,7 @@ import Control.Monad.IO.Class
 import Data.IORef
 import qualified Data.Map as M
 import Data.Maybe
+import qualified Data.Set as S
 import Data.Text (Text)
 import qualified Data.Text as T
 import Debug.Trace
@@ -61,33 +62,38 @@ primitives =
       Prim "<=" (evalCompOp (<=)),
       Prim ">=" (evalCompOp (>=)),
       Prim "||" (evalBoolOp (||)),
-      Prim "&&" (evalBoolOp (&&))
+      Prim "&&" (evalBoolOp (&&)),
+      Prim "symbol?" isSym,
+      Prim "string?" isStr,
+      Prim "number?" isNum,
+      Prim "car" \[List (x : _)] -> pure x,
+      Prim "cdr" \[List (_ : xs)] -> pure $ List xs,
+      Prim "symbol-to-string" \[Atom x] -> pure $ S x,
+      Prim "string-to-symbol" \[S x] -> pure $ S x,
+      Prim "eq?" \[x, y] -> pure $ B $ x == y
     ]
+  where
+    isSym =
+      \case
+        [Atom _] -> pure $ B True
+        _ -> pure $ B False
+    isNum =
+      \case
+        [N _] -> pure $ B True
+        _ -> pure $ B False
+    isStr =
+      \case
+        [S _] -> pure $ B True
+        _ -> pure $ B False
 
--- TODO use PrimitiveFunc Map
+primitiveSyms :: S.Set Text
+primitiveSyms = M.keysSet primitives
+
+has :: (Ord a, Eq a) => S.Set a -> a -> Bool
+has set val = S.lookupGE val set == Just val
+
 apply :: Expr -> [Expr] -> IOThrowsError Expr
-apply (Atom "+") args = evalMath Nothing (+) args
-apply (Atom "-") args = evalMath (Just 0) (-) args
-apply (Atom "*") args = evalMath Nothing (*) args
-apply (Atom "/") args = evalMath Nothing div args -- TODO devide by zero error
-apply (Atom "=") args = evalCompOp (==) args
-apply (Atom "/=") args = evalCompOp (/=) args
-apply (Atom "<") args = evalCompOp (<) args
-apply (Atom ">") args = evalCompOp (>) args
-apply (Atom "<=") args = evalCompOp (<=) args
-apply (Atom ">=") args = evalCompOp (>=) args
-apply (Atom "||") args = evalBoolOp (||) args
-apply (Atom "symbol?") [Atom _] = pure $ B True
-apply (Atom "symbol?") _ = pure $ B False
-apply (Atom "string?") [Constant (Str _)] = pure $ B True
-apply (Atom "string?") _ = pure $ B False
-apply (Atom "number?") [Constant (Num _)] = pure $ B True
-apply (Atom "number?") _ = pure $ B False
-apply (Atom "car") [List (x : _)] = pure x
-apply (Atom "cdr") [List (_ : xs)] = pure $ List xs
-apply (Atom "symbol-to-string") [Atom x] = pure . S $ x
-apply (Atom "string-to-symbol") [Constant (Str x)] = pure $ Atom x
-apply (Atom "eq?") [x, y] = pure $ B $ x == y
+apply (Atom sym) args | has primitiveSyms sym = applyPrim (fromJust $ M.lookup sym primitives) args
 apply (Func params body closure) args =
   if length params /= length args
     then throwError $ "num params invalid " <> showText (length params) <> " " <> showText args
@@ -96,6 +102,10 @@ apply (Func params body closure) args =
     remainingArgs = drop (length params) args
     evalBody env = last <$> mapM (eval env) body
 apply op args = throwError $ "not implemented: " <> showText op <> " " <> showText args
+
+applyPrim :: Expr -> [Expr] -> IOThrowsError Expr
+applyPrim (Prim _ op) args = op args
+applyPrim e args = error $ "applyPrim on non-prim" <> show e <> " for " <> show args
 
 makeFunc :: (Monad m) => Env -> [Expr] -> [Expr] -> m Expr
 makeFunc env args body = return $ Func (map showText args) body env
