@@ -47,8 +47,22 @@ evalMath init op args = do
         _ -> args
   evalInfix op' args' coerceNum
 
-primitives :: [Expr]
-primitives = [Prim "+" (evalMath Nothing (+))]
+primitives :: M.Map Text Expr
+primitives =
+  M.fromList . map (\(Prim sym body) -> (sym, Prim sym body)) $
+    [ Prim "+" (evalMath Nothing (+)),
+      Prim "-" (evalMath (Just 0) (-)),
+      Prim "*" (evalMath Nothing (*)),
+      Prim "/" (evalMath Nothing div), -- TODO devide by zero error
+      Prim "==" (evalCompOp (==)),
+      Prim "/=" (evalCompOp (/=)),
+      Prim "<" (evalCompOp (<)),
+      Prim ">" (evalCompOp (>)),
+      Prim "<=" (evalCompOp (<=)),
+      Prim ">=" (evalCompOp (>=)),
+      Prim "||" (evalBoolOp (||)),
+      Prim "&&" (evalBoolOp (&&))
+    ]
 
 -- TODO use PrimitiveFunc Map
 apply :: Expr -> [Expr] -> IOThrowsError Expr
