@@ -132,12 +132,6 @@ eval env (List (Atom "lambda" : List params : body)) =
   makeFunc env params body
 eval env (List [x]) = do
   eval env x
---eval env (List (function : args)) = do
---  func <- eval env function
---  argVals <- mapM (eval env) args
---  traceShowM func
---  traceShowM argVals
---  apply func argVals
 eval env (OpList (Atom "begin") args) =
   last <$> mapM (eval env) args
 eval env (OpList x xs) = do
