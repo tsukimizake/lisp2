@@ -30,6 +30,14 @@ type Env = IORef (Map Sym (IORef Expr))
 nullEnv :: IO Env
 nullEnv = newIORef M.empty
 
+showEnv :: Env -> IO String
+showEnv env = do
+  es <- M.toList <$> readIORef env
+  ss <- forM es $ \(k, v) -> do
+    v' <- readIORef v
+    pure $ k <> " : " <> showText v'
+  pure . T.unpack $ T.intercalate ",  " ss
+
 data Expr
   = Constant Value
   | Atom Text

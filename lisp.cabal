@@ -41,7 +41,7 @@ library
 
 
 
-test-suite example-test
+test-suite test
   type:             exitcode-stdio-1.0
   main-is:          Spec.hs
   hs-source-dirs:   test
