@@ -22,4 +22,4 @@ spec :: Spec
 spec = describe "eval" do
   it "can eval" do
     testEval (unsafePerformIO nullEnv) "(+ 1 2 -2 (- 0 1))" (N 0)
-    testEval (unsafePerformIO nullEnv) "(begin (define (counter inc) (lambda (x) (set! inc (+ x inc)) inc)) (define my-count (counter 5)) (my-count 3))" (N 8)
+    testEval (unsafePerformIO nullEnv) "(begin (define (counter inc) (lambda (x) (set inc (+ x inc)) inc)) (define my-count (counter 5)) (my-count 3))" (N 8)

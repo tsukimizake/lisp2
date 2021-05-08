@@ -136,7 +136,7 @@ eval env (List (Atom "cond" : key : clauses)) =
   evalCond env key clauses
 eval env (List []) = do
   pure nil
-eval env (List [Atom "set!", Atom var, form]) =
+eval env (List [Atom "set", Atom var, form]) =
   eval env form >>= setVar env var
 eval env (List [Atom "define", Atom var, form]) =
   eval env form >>= defineVar env var
