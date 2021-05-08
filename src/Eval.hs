@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -Wno-deferred-out-of-scope-variables #-}
+
 module Eval where
 
 import Control.Monad
@@ -92,12 +94,24 @@ primitiveSyms = M.keysSet primitives
 has :: (Ord a, Eq a) => S.Set a -> a -> Bool
 has set val = S.lookupGE val set == Just val
 
+bindVars :: Env -> [(Sym, Expr)] -> IO Env
+bindVars envRef bindings = readIORef envRef >>= extendEnv bindings >>= newIORef
+  where
+    extendEnv :: [(Sym, Expr)] -> M.Map Sym (IORef Expr) -> IO (M.Map Sym (IORef Expr))
+    extendEnv bindings env = M.union env . M.fromList <$> mapM addBinding bindings
+    addBinding :: (Sym, Expr) -> IO (Sym, IORef Expr)
+    addBinding (var, value) = do
+      ref <- newIORef value
+      return (var, ref)
+
 apply :: Expr -> [Expr] -> IOThrowsError Expr
 apply (Atom sym) args | has primitiveSyms sym = applyPrim (fromJust $ M.lookup sym primitives) args
 apply (Func params body closure) args =
   if length params /= length args
     then throwError $ "num params invalid " <> showText (length params) <> " " <> showText args
-    else liftIO (bindVars closure $ zip params args) >>= evalBody
+    else do
+      env' <- liftIO (bindVars closure $ zip params args)
+      evalBody env'
   where
     remainingArgs = drop (length params) args
     evalBody env = last <$> mapM (eval env) body
@@ -107,7 +121,7 @@ applyPrim :: Expr -> [Expr] -> IOThrowsError Expr
 applyPrim (Prim _ op) args = op args
 applyPrim e args = error $ "applyPrim on non-prim" <> show e <> " for " <> show args
 
-makeFunc :: (Monad m) => Env -> [Expr] -> [Expr] -> m Expr
+makeFunc :: (MonadIO m) => Env -> [Expr] -> [Expr] -> m Expr
 makeFunc env args body = return $ Func (map showText args) body env
 
 eval :: Env -> Expr -> IOThrowsError Expr
@@ -130,8 +144,6 @@ eval env (List [Atom "define", List (Atom var : args), form]) =
   makeFunc env args [form] >>= defineVar env var
 eval env (List (Atom "lambda" : List params : body)) =
   makeFunc env params body
-eval env (List [x]) = do
-  eval env x
 eval env (OpList (Atom "begin") args) =
   last <$> mapM (eval env) args
 eval env (OpList x xs) = do
@@ -202,16 +214,6 @@ setVar envRef var val = do
     (liftIO . flip writeIORef val)
     (M.lookup var env)
   pure val
-
-bindVars :: Env -> [(Sym, Expr)] -> IO Env
-bindVars envRef bindings = readIORef envRef >>= extendEnv bindings >>= newIORef
-  where
-    extendEnv :: [(Sym, Expr)] -> M.Map Sym (IORef Expr) -> IO (M.Map Sym (IORef Expr))
-    extendEnv bindings env = M.fromList <$> mapM addBinding bindings
-    addBinding :: (Sym, Expr) -> IO (Sym, IORef Expr)
-    addBinding (var, value) = do
-      ref <- newIORef value
-      return (var, ref)
 
 -- builtins
 
