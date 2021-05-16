@@ -1,5 +1,3 @@
-{-# OPTIONS_GHC -Wno-deferred-out-of-scope-variables #-}
-
 module Eval where
 
 import Control.Monad
@@ -54,7 +52,7 @@ primitives :: M.Map Text Expr
 primitives =
   M.fromList . map (\(Prim sym body) -> (sym, Prim sym body)) $
     [ Prim "+" (evalMath Nothing (+)),
-      Prim "-" (evalMath (Just 0) (-)),
+      Prim "-" (evalMath Nothing (-)),
       Prim "*" (evalMath Nothing (*)),
       Prim "/" (evalMath Nothing div), -- TODO devide by zero error
       Prim "==" (evalCompOp (==)),
