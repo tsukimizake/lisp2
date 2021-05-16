@@ -130,8 +130,8 @@ eval env (List [Atom "if", pred, t, f]) = do
   case pred' of
     B False -> eval env f
     _ -> eval env t
-eval env (List (Atom "cond" : key : clauses)) =
-  evalCond env key clauses
+eval env (List (Atom "case" : key : clauses)) =
+  evalCase env key clauses
 eval env (List []) = do
   pure nil
 eval env (List [Atom "set", Atom var, form]) =
@@ -164,13 +164,22 @@ maybeToEither :: e -> Maybe a -> Either e a
 maybeToEither err Nothing = Left err
 maybeToEither _ (Just x) = Right x
 
-evalCond :: Env -> Expr -> [Expr] -> IOThrowsError Expr
-evalCond env key clauses = do
+evalCase :: Env -> Expr -> [Expr] -> IOThrowsError Expr
+evalCase env key clauses = do
   key' <- eval env key
-  case condHead (\(List (List matches : _)) -> key' `elem` matches) clauses of
+  case condHead (matchClause key') clauses of
     Nothing -> pure nil
-    Just (List (cond : body)) -> eval env (List body)
+    Just (List (cond : body)) -> fromMaybe nil . safe last <$> mapM (eval env) body
     Just x -> throwError $ "malformed cond " <> showText x
+  where
+    matchClause :: Expr -> Expr -> Bool
+    matchClause key (List (List matches : _)) = key `elem` matches
+    matchClause key (List (Atom "else" : _)) = True
+
+-- predicateが初めて満たされたやつを返す
+condHead :: (a -> Bool) -> [a] -> Maybe a
+condHead predicate xs =
+  safe head $ dropWhile (not . predicate) xs
 
 evalCompOp :: (Int -> Int -> Bool) -> [Expr] -> IOThrowsError Expr
 evalCompOp op args = do
@@ -214,11 +223,6 @@ setVar envRef var val = do
   pure val
 
 -- builtins
-
--- predicateが初めて満たされたやつを返す
-condHead :: (a -> Bool) -> [a] -> Maybe a
-condHead predicate xs =
-  safe head $ dropWhile (not . predicate) xs
 
 evalBoolOp :: (Bool -> Bool -> Bool) -> [Expr] -> IOThrowsError Expr
 evalBoolOp op args = do
