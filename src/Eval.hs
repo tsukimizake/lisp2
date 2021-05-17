@@ -125,6 +125,7 @@ makeFunc env args body = return $ Func (map showText args) body env
 eval :: Env -> Expr -> IOThrowsError Expr
 eval env v@(Constant _) = pure v
 eval _ (QuoteList xs) = pure $ List xs
+eval env x@(Case key clauses) = evalCaseLam env key clauses
 eval env (List [Atom "if", pred, t, f]) = do
   pred' <- eval env pred
   case pred' of
@@ -164,9 +165,16 @@ maybeToEither :: e -> Maybe a -> Either e a
 maybeToEither err Nothing = Left err
 maybeToEither _ (Just x) = Right x
 
-evalCaseLam :: Env -> Expr -> [Expr] -> IOThrowsError Expr
+evalCaseLam :: Env -> Expr -> [Clause] -> IOThrowsError Expr
 evalCaseLam env key clauses = do
-  undefined
+  key' <- eval env key
+  clauses' <-
+    forM clauses \case
+      Clause {patFunc, clauseBody} ->
+        if patFunc key'
+          then pure $ Just $ eval env clauseBody
+          else pure Nothing
+  fromMaybe nil <$> sequenceA (safe head $ catMaybes clauses')
 
 evalCase :: Env -> Expr -> [Expr] -> IOThrowsError Expr
 evalCase env key clauses = do

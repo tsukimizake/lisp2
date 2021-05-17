@@ -44,7 +44,12 @@ data Expr
   | List [Expr]
   | Func {params :: [Text], body :: [Expr], closure :: Env}
   | Prim {name :: Text, op :: [Expr] -> IOThrowsError Expr}
-  | Case {clauses :: [(Expr -> Bool, Expr)]}
+  | Case {key :: Expr, clauses :: [Clause]}
+
+data Clause = Clause {patStr :: Text, patFunc :: Expr -> Bool, clauseBody :: Expr}
+
+instance Show Clause where
+  show Clause {patStr, patFunc, clauseBody} = T.unpack $ "(" <> patStr <> showText clauseBody <> ")"
 
 showText :: (Show a) => a -> Text
 showText = T.pack . show
@@ -56,6 +61,7 @@ instance Show Expr where
     List xs -> T.unpack $ "(" <> T.intercalate " " (map showText xs) <> ")"
     Func {params, body} -> T.unpack $ "(lambda (" <> T.unwords params <> ")" <> T.intercalate " " (map showText body) <> ")"
     Prim {name} -> T.unpack name
+    Case {clauses} -> T.unpack $ "(case " <> T.intercalate " " (map showText clauses) <> ")"
 
 instance Eq Expr where
   l == r = case (l, r) of

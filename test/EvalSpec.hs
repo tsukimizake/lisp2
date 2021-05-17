@@ -6,6 +6,7 @@ import Data.Map as M
 import Data.Text
 import Eval
 import GHC.IO (unsafePerformIO)
+import Opt
 import Parser
 import Test.Hspec
 import Types
@@ -14,7 +15,7 @@ testEval :: Env -> Text -> Expr -> Expectation
 testEval env input expect = do
   case parseExpr input of
     Right expr -> do
-      evaled <- runIOThrows $ eval env expr
+      evaled <- runIOThrows (eval env =<< optimize expr)
       evaled `shouldBe` Right expect
     Left err -> error $ show err
 
