@@ -164,6 +164,10 @@ maybeToEither :: e -> Maybe a -> Either e a
 maybeToEither err Nothing = Left err
 maybeToEither _ (Just x) = Right x
 
+evalCaseLam :: Env -> Expr -> [Expr] -> IOThrowsError Expr
+evalCaseLam env key clauses = do
+  undefined
+
 evalCase :: Env -> Expr -> [Expr] -> IOThrowsError Expr
 evalCase env key clauses = do
   key' <- eval env key

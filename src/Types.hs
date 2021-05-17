@@ -44,6 +44,7 @@ data Expr
   | List [Expr]
   | Func {params :: [Text], body :: [Expr], closure :: Env}
   | Prim {name :: Text, op :: [Expr] -> IOThrowsError Expr}
+  | Case {clauses :: [(Expr -> Bool, Expr)]}
 
 showText :: (Show a) => a -> Text
 showText = T.pack . show

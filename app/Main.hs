@@ -8,6 +8,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Debug.Trace
 import Eval
+import Opt
 import Parser
 import System.Environment
 import System.IO
@@ -18,8 +19,8 @@ runOne env input = do
   let parsed = parseExpr input
   case parsed of
     Left err -> print err
-    Right x -> do
-      print =<< runIOThrows (eval env x)
+    Right x ->
+      print =<< runIOThrows (eval env =<< optimize x)
 
 runRepl :: Env -> IO ()
 runRepl env =
@@ -35,7 +36,7 @@ main = do
   xs <- System.Environment.getArgs
   init <- newIORef M.empty
   case length xs of
-    1 -> do
+    1 ->
       runOne init . T.pack . head $ xs
     _ ->
       runRepl init
