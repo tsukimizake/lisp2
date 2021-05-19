@@ -1,6 +1,7 @@
 module Eval where
 
 import Control.Monad
+import Control.Monad.Cont
 import Control.Monad.Except
 import Control.Monad.IO.Class
 import Data.IORef
@@ -168,13 +169,14 @@ maybeToEither _ (Just x) = Right x
 evalCaseLam :: Env -> Expr -> [Clause] -> IOThrowsError Expr
 evalCaseLam env key clauses = do
   key' <- eval env key
-  clauses' <-
-    forM clauses \case
-      Clause {patFunc, clauseBody} ->
-        if patFunc key'
-          then pure $ Just $ eval env clauseBody
-          else pure Nothing
-  fromMaybe nil <$> sequenceA (safe head $ catMaybes clauses')
+  (`runContT` id) do
+    callCC \break -> do
+      forM_ clauses \case
+        Clause {patFunc, clauseBody} ->
+          if patFunc key'
+            then do break $ eval env clauseBody
+            else pure ()
+      pure $ pure nil
 
 evalCase :: Env -> Expr -> [Expr] -> IOThrowsError Expr
 evalCase env key clauses = do
