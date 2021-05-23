@@ -26,6 +26,10 @@ spec = describe "eval" do
     testEval (unsafePerformIO nullEnv) "(- 2 1)" (N 1)
   it "can eval lambda" do
     testEval (unsafePerformIO nullEnv) "(begin (define (counter inc) (lambda (x) (set inc (+ x inc)) inc)) (define my-count (counter 5)) (my-count 3))" (N 8)
+  it "can eval define" do
+    testEval (unsafePerformIO nullEnv) "(begin (define (f a b) (+ a b)) (f 1 2))" (N 3)
+    testEval (unsafePerformIO nullEnv) "(begin (define (sumtr n x) (case n ((0) x) (else (sumtr (- n 1) (+ x 1))))) (sumtr 10 0))" (N 55)
+
   it "can eval case" do
     testEval (unsafePerformIO nullEnv) "(case 0 ((0) 1))" (N 1)
     testEval (unsafePerformIO nullEnv) "(case 0 ((0) 2) (else 1))" (N 2)
