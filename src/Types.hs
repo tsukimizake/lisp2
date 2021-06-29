@@ -1,4 +1,11 @@
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 
 module Types where
 
@@ -8,6 +15,7 @@ import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Text (Text)
 import qualified Data.Text as T
+import Gensym
 
 data Value
   = Num Int
@@ -43,7 +51,7 @@ data Expr
   | Atom Text
   | List [Expr]
   | Func {params :: [Text], body :: [Expr], closure :: Env}
-  | Prim {name :: Text, op :: [Expr] -> IOThrowsError Expr}
+  | Prim {name :: Text, op :: [Expr] -> CompilerM Expr}
   | Case {key :: Expr, clauses :: [Clause]}
 
 data Clause = Clause {patStr :: Text, patFunc :: Expr -> Bool, clauseBody :: Expr}
@@ -72,17 +80,25 @@ instance Eq Expr where
 
 type Error = Text
 
-type IOThrowsError = ExceptT Error IO
+newtype CompilerM a = CompilerM (GensymT (ExceptT Error IO) a)
+  deriving (Functor, Applicative, Monad, MonadError Error, MonadIO)
 
-runIOThrows :: IOThrowsError a -> IO (Either Error a)
-runIOThrows = runExceptT
+runIOThrows :: CompilerM a -> IO (Either Error a)
+runIOThrows (CompilerM x) = runExceptT $ runGensymT x
 
-pattern OpList x xs = (List (x : xs))
+pattern OpList x xs = (List (Atom x : xs))
 
-pattern QuoteList xs = OpList (Atom "quote") xs
+pattern QuoteList xs = OpList "quote" xs
 
 pattern N x = Constant (Num x)
 
 pattern B x = Constant (Bool x)
 
 pattern S x = Constant (Str x)
+
+traverseExpr :: (Monad m) => (Expr -> m Expr) -> Expr -> m Expr
+traverseExpr f x@(List xs) = do
+  x' <- List <$> mapM (traverseExpr f) xs
+  f x'
+traverseExpr f x = do
+  f x

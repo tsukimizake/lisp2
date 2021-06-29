@@ -16,15 +16,15 @@ import Types
 typeError :: Text -> Expr -> Text
 typeError expected actual = "type error, " <> expected <> " expected on " <> showText actual
 
-coerceNum :: Expr -> IOThrowsError Int
+coerceNum :: Expr -> CompilerM Int
 coerceNum (N v) = pure v
 coerceNum x = throwError $ typeError "num" x
 
-coerceBool :: Expr -> IOThrowsError Bool
+coerceBool :: Expr -> CompilerM Bool
 coerceBool (B v) = pure v
 coerceBool e = throwError $ typeError "bool" e
 
-evalInfix :: (Expr -> a -> IOThrowsError Expr) -> [Expr] -> (Expr -> IOThrowsError a) -> IOThrowsError Expr
+evalInfix :: (Expr -> a -> CompilerM Expr) -> [Expr] -> (Expr -> CompilerM a) -> CompilerM Expr
 evalInfix op args coerce = do
   if null args
     then throwError "no arg"
@@ -38,9 +38,9 @@ evalInfix op args coerce = do
         h
         t
 
-evalMath :: Maybe Int -> (Int -> Int -> Int) -> [Expr] -> IOThrowsError Expr
+evalMath :: Maybe Int -> (Int -> Int -> Int) -> [Expr] -> CompilerM Expr
 evalMath init op args = do
-  let op' :: Expr -> Int -> IOThrowsError Expr
+  let op' :: Expr -> Int -> CompilerM Expr
       op' l r = do
         l' <- coerceNum l
         pure . Constant . Num $ op l' r
@@ -103,7 +103,7 @@ bindVars envRef bindings = readIORef envRef >>= extendEnv bindings >>= newIORef
       ref <- newIORef value
       return (var, ref)
 
-apply :: Expr -> [Expr] -> IOThrowsError Expr
+apply :: Expr -> [Expr] -> CompilerM Expr
 apply (Atom sym) args | has primitiveSyms sym = applyPrim (fromJust $ M.lookup sym primitives) args
 apply (Func params body closure) args =
   if length params /= length args
@@ -116,14 +116,14 @@ apply (Func params body closure) args =
     evalBody env = last <$> mapM (eval env) body
 apply op args = throwError $ "not implemented: " <> showText op <> " " <> showText args
 
-applyPrim :: Expr -> [Expr] -> IOThrowsError Expr
+applyPrim :: Expr -> [Expr] -> CompilerM Expr
 applyPrim (Prim _ op) args = op args
 applyPrim e args = error $ "applyPrim on non-prim" <> show e <> " for " <> show args
 
 makeFunc :: (MonadIO m) => Env -> [Expr] -> [Expr] -> m Expr
 makeFunc env args body = return $ Func (map showText args) body env
 
-eval :: Env -> Expr -> IOThrowsError Expr
+eval :: Env -> Expr -> CompilerM Expr
 eval env v@(Constant _) = pure v
 eval _ (QuoteList xs) = pure $ List xs
 eval env x@(Case key clauses) = evalCaseLam env key clauses
@@ -144,11 +144,11 @@ eval env (List [Atom "define", List (Atom var : args), form]) =
   makeFunc env args [form] >>= defineVar env var
 eval env (List (Atom "lambda" : List params : body)) =
   makeFunc env params body
-eval env (OpList (Atom "begin") args) =
+eval env (OpList "begin" args) =
   last <$> mapM (eval env) args
 eval env (OpList x xs) = do
   xs' <- mapM (eval env) xs
-  x' <- eval env x
+  x' <- eval env (Atom x)
   apply x' xs'
 eval env (Atom x) = do
   bound <- isBound env x
@@ -166,7 +166,7 @@ maybeToEither :: e -> Maybe a -> Either e a
 maybeToEither err Nothing = Left err
 maybeToEither _ (Just x) = Right x
 
-evalCaseLam :: Env -> Expr -> [Clause] -> IOThrowsError Expr
+evalCaseLam :: Env -> Expr -> [Clause] -> CompilerM Expr
 evalCaseLam env key clauses = do
   key' <- eval env key
   (`runContT` id) do
@@ -178,7 +178,7 @@ evalCaseLam env key clauses = do
             else pure ()
       pure $ pure nil
 
-evalCase :: Env -> Expr -> [Expr] -> IOThrowsError Expr
+evalCase :: Env -> Expr -> [Expr] -> CompilerM Expr
 evalCase env key clauses = do
   key' <- eval env key
   case condHead (matchClause key') clauses of
@@ -195,20 +195,20 @@ condHead :: (a -> Bool) -> [a] -> Maybe a
 condHead predicate xs =
   safe head $ dropWhile (not . predicate) xs
 
-evalCompOp :: (Int -> Int -> Bool) -> [Expr] -> IOThrowsError Expr
+evalCompOp :: (Int -> Int -> Bool) -> [Expr] -> CompilerM Expr
 evalCompOp op args = do
-  let op' :: Expr -> Int -> IOThrowsError Expr
+  let op' :: Expr -> Int -> CompilerM Expr
       op' l r = do
         l' <- coerceNum l
         pure . B $ op l' r
   evalInfix op' args coerceNum
 
-isBound :: Env -> Sym -> IOThrowsError Bool
+isBound :: Env -> Sym -> CompilerM Bool
 isBound envRef var = do
   env <- liftIO $ readIORef envRef
   pure . isJust $ M.lookup var env
 
-defineVar :: Env -> Text -> Expr -> IOThrowsError Expr
+defineVar :: Env -> Text -> Expr -> CompilerM Expr
 defineVar envRef var value = do
   alreadyDefined <- isBound envRef var
   if alreadyDefined
@@ -219,7 +219,7 @@ defineVar envRef var value = do
       writeIORef envRef (M.insert var valueRef env)
       return value
 
-getVar :: Env -> Sym -> IOThrowsError Expr
+getVar :: Env -> Sym -> CompilerM Expr
 getVar envRef var = do
   env <- liftIO $ readIORef envRef
   maybe
@@ -227,7 +227,7 @@ getVar envRef var = do
     (liftIO . readIORef)
     (M.lookup var env)
 
-setVar :: Env -> Sym -> Expr -> IOThrowsError Expr
+setVar :: Env -> Sym -> Expr -> CompilerM Expr
 setVar envRef var val = do
   env <- liftIO $ readIORef envRef
   maybe
@@ -238,9 +238,9 @@ setVar envRef var val = do
 
 -- builtins
 
-evalBoolOp :: (Bool -> Bool -> Bool) -> [Expr] -> IOThrowsError Expr
+evalBoolOp :: (Bool -> Bool -> Bool) -> [Expr] -> CompilerM Expr
 evalBoolOp op args = do
-  let op' :: Expr -> Bool -> IOThrowsError Expr
+  let op' :: Expr -> Bool -> CompilerM Expr
       op' l r = do
         l' <- coerceBool l
         pure . B $ op l' r

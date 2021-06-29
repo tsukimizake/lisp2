@@ -1,14 +1,15 @@
 module Opt (optimize) where
 
 import Control.Monad
+import Cps
 import Debug.Trace
 import Types
 
-optimize :: Expr -> IOThrowsError Expr
+optimize :: Expr -> CompilerM Expr
 optimize x = do
   traverseExpr optimizeCase x
 
-optimizeCase :: Expr -> IOThrowsError Expr
+optimizeCase :: Expr -> CompilerM Expr
 optimizeCase (List (Atom "case" : key : clauses)) = do
   clauses' <- forM clauses \clause -> do
     case clause of
@@ -20,10 +21,3 @@ optimizeCase (List (Atom "case" : key : clauses)) = do
   pure $ Case key clauses'
 optimizeCase x = do
   pure x
-
-traverseExpr :: (Monad m) => (Expr -> m Expr) -> Expr -> m Expr
-traverseExpr f x@(List xs) = do
-  x' <- List <$> mapM (traverseExpr f) xs
-  f x'
-traverseExpr f x = do
-  f x
