@@ -1,7 +1,8 @@
+{-# OPTIONS_GHC -Wno-incomplete-patterns #-}
+
 module Cps where
 
 import Data.Text
-import Gensym
 import Types (Expr, Value (..))
 import qualified Types as E
 
@@ -38,6 +39,9 @@ l >:= r = do
 data Bind = Bind Sym [Sym] Cps
   deriving (Show, Eq)
 
+chainCps :: [Op -> E.CompilerM Cps] -> Op -> E.CompilerM Cps
+chainCps [] c = pure $ AppB c []
+
 toCpsImpl :: Expr -> (Op -> E.CompilerM Cps) -> E.CompilerM Cps
 toCpsImpl (E.Constant val) c = c (Constant val)
 toCpsImpl (E.Atom sym) c = c (Id sym)
@@ -46,9 +50,14 @@ toCpsImpl (E.OpList "+" [l, r]) c = do
   let c' = \p0 ->
         toCpsImpl
           r
-          ( \p1 ->
-              (Add, [p0, p1], ["r"]) >>:= mapM c [Id "r"]
+          ( \p1 -> do
+              retSym <- E.gensym
+              (Add, [p0, p1], [retSym]) >>:= mapM c [Id retSym]
           )
   toCpsImpl l c'
-toCpsImpl (E.List xs) c = undefined
+toCpsImpl (E.List xs) c = do
+  r <- mapM (`toCpsImpl` c') xs
+  undefined
+  where
+    c' = undefined
 toCpsImpl _ _ = undefined

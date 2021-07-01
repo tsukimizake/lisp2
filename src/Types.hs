@@ -96,6 +96,9 @@ pattern B x = Constant (Bool x)
 
 pattern S x = Constant (Str x)
 
+gensym :: CompilerM Text
+gensym = CompilerM Gensym.gensym
+
 traverseExpr :: (Monad m) => (Expr -> m Expr) -> Expr -> m Expr
 traverseExpr f x@(List xs) = do
   x' <- List <$> mapM (traverseExpr f) xs
