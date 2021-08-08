@@ -189,6 +189,7 @@ evalCase env key clauses = do
     matchClause :: Expr -> Expr -> Bool
     matchClause key (List (List matches : _)) = key `elem` matches
     matchClause key (List (Atom "else" : _)) = True
+    matchClause _ _ = False
 
 -- predicateが初めて満たされたやつを返す
 condHead :: (a -> Bool) -> [a] -> Maybe a
