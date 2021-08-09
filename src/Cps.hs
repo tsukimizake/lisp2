@@ -22,10 +22,10 @@ data Op
   | Constant Value
   deriving (Show, Eq)
 
-data PrimSym = Add | Sub | RShift | LShift | EQ | HEAP | STACK | POP | RREF | RSET | DebugLog String
+data PrimSym = Add | Sub | RShift | LShift | HEAP | STACK | POP | RREF | RSET | DebugLog String
   deriving (Show, Eq)
 
-data BranchSym = LT | GT
+data BranchSym = LT | GT | EQ
   deriving (Show, Eq)
 
 data FixSym = FixF | FixS
@@ -34,7 +34,7 @@ data FixSym = FixF | FixS
 data Cps
   = (PrimSym, [Op], Maybe Sym) :>> Cps
   | (BranchSym, [Op], Maybe Sym) :|> [Cps]
-  | (FixSym, [Bind]) :> Cps
+  | (FixSym, [Bind]) :&> Cps
   | AppF Op [Op]
   | AppB Op [Op]
   | DebugNop Value
@@ -45,10 +45,15 @@ l >>:= r = do
   k <- r
   pure $ l :>> k
 
-(>:=) :: (Monad m) => (FixSym, [Bind]) -> m Cps -> m Cps
-l >:= r = do
+(|>:=) :: (Monad m) => (BranchSym, [Op], Maybe Sym) -> m [Cps] -> m Cps
+l |>:= r = do
   k <- r
-  pure $ l :> k
+  pure $ l :|> k
+
+(&>:=) :: (Monad m) => (FixSym, [Bind]) -> m Cps -> m Cps
+l &>:= r = do
+  k <- r
+  pure $ l :&> k
 
 data Bind = Bind Sym [Sym] Cps
   deriving (Show, Eq)
