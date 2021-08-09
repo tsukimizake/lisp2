@@ -22,21 +22,25 @@ data Op
   | Constant Value
   deriving (Show, Eq)
 
-data PrimSym = Add | Sub | RShift | LShift | LT | GT | EQ | HEAP | STACK | POP | RREF | RSET | DebugLog String
+data PrimSym = Add | Sub | RShift | LShift | EQ | HEAP | STACK | POP | RREF | RSET | DebugLog String
+  deriving (Show, Eq)
+
+data BranchSym = LT | GT
   deriving (Show, Eq)
 
 data FixSym = FixF | FixS
   deriving (Show, Eq)
 
 data Cps
-  = (PrimSym, [Op], Maybe Sym) :>> [Cps]
+  = (PrimSym, [Op], Maybe Sym) :>> Cps
+  | (BranchSym, [Op], Maybe Sym) :|> [Cps]
   | (FixSym, [Bind]) :> Cps
   | AppF Op [Op]
   | AppB Op [Op]
   | DebugNop Value
   deriving (Show, Eq)
 
-(>>:=) :: (Monad m) => (PrimSym, [Op], Maybe Sym) -> m [Cps] -> m Cps
+(>>:=) :: (Monad m) => (PrimSym, [Op], Maybe Sym) -> m Cps -> m Cps
 l >>:= r = do
   k <- r
   pure $ l :>> k
@@ -72,8 +76,8 @@ evalCps env ((Add, args, ret) :>> cont) = do
     liftIO $ modifyIORef acc (+ v)
   res <- liftIO $ readIORef acc
   let newenv = pushToEnv ret (Num res) env
-  evalCps newenv (unwrapOne cont)
-evalCps env ((Cps.LT, [lhs, rhs], ret) :>> [then_, else_]) = do
+  evalCps newenv cont
+evalCps env ((Cps.LT, [lhs, rhs], ret) :|> [then_, else_]) = do
   let (Num lhs') = readIfId env lhs
   let (Num rhs') = readIfId env rhs
   if lhs' < rhs'
@@ -81,14 +85,18 @@ evalCps env ((Cps.LT, [lhs, rhs], ret) :>> [then_, else_]) = do
     else evalCps env else_
 evalCps env ((DebugLog msg, ops, _) :>> cont) = do
   Debug.traceM $ msg <> ": " <> show ops
-  evalCps env (unwrapOne cont)
+  evalCps env cont
 evalCps env (DebugNop val) = pure (env, val)
 
 cps1 :: Cps
 cps1 =
   (Add, [Id "x", Constant $ Num 2], Just "t")
-    :>> [ (Cps.LT, [Id "t", Constant $ Num 10], Just "r")
-            :>> [ (DebugLog "t", [], Nothing) :>> [DebugNop (Bool True)],
-                  (DebugLog "f", [], Nothing) :>> [DebugNop (Bool False)]
+    :>> ( (Cps.LT, [Id "t", Constant $ Num 10], Just "r")
+            :|> [ (DebugLog "t", [], Nothing) :>> DebugNop (Bool True),
+                  (DebugLog "f", [], Nothing) :>> DebugNop (Bool False)
                 ]
-        ]
+        )
+
+cps2 :: Cps
+cps2 =
+  undefined
