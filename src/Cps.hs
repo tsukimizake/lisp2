@@ -22,19 +22,34 @@ data Op
   | Constant Value
   deriving (Show, Eq)
 
-data PrimSym = Add | Sub | RShift | LShift | HEAP | STACK | POP | RREF | RSET | DebugLog String
+data Prim
+  = Add [Op] (Maybe Sym)
+  | Sub [Op] (Maybe Sym)
+  | RShift [Op] (Maybe Sym)
+  | LShift [Op] (Maybe Sym)
+  | HEAP [Op] (Maybe Sym)
+  | STACK [Op] (Maybe Sym)
+  | POP [Op] (Maybe Sym)
+  | RREF [Op] (Maybe Sym)
+  | RSET [Op] (Maybe Sym)
+  | DebugLog String [Op] (Maybe Sym)
   deriving (Show, Eq)
 
-data BranchSym = LT | GT | EQ
+data Branch
+  = Lt [Op] (Maybe Sym)
+  | Gt [Op] (Maybe Sym)
+  | Eq [Op] (Maybe Sym)
   deriving (Show, Eq)
 
-data FixSym = FixF | FixS
+data Fix
+  = FixF Sym [Sym] Cps
+  | FixS Sym [Sym] Cps
   deriving (Show, Eq)
 
 data Cps
-  = (PrimSym, [Op], Maybe Sym) :>> Cps
-  | (BranchSym, [Op], Maybe Sym) :|> [Cps]
-  | (FixSym, Sym, [Sym], Cps) :&> Cps
+  = Prim :>> Cps
+  | Branch :|> [Cps]
+  | Fix :&> Cps
   | AppF Op [Op]
   | AppB Op [Op]
   | DebugNop Value
@@ -46,17 +61,17 @@ infixr 8 :|>
 
 infixr 8 :&>
 
-(>>:=) :: (Monad m) => (PrimSym, [Op], Maybe Sym) -> m Cps -> m Cps
+(>>:=) :: (Monad m) => Prim -> m Cps -> m Cps
 l >>:= r = do
   k <- r
   pure $ l :>> k
 
-(|>:=) :: (Monad m) => (BranchSym, [Op], Maybe Sym) -> m [Cps] -> m Cps
+(|>:=) :: (Monad m) => Branch -> m [Cps] -> m Cps
 l |>:= r = do
   k <- r
   pure $ l :|> k
 
-(&>:=) :: (Monad m) => (FixSym, Sym, [Sym], Cps) -> m Cps -> m Cps
+(&>:=) :: (Monad m) => Fix -> m Cps -> m Cps
 l &>:= r = do
   k <- r
   pure $ l :&> k
@@ -83,7 +98,7 @@ unwrapOne :: [a] -> a
 unwrapOne = Prelude.head
 
 evalCps :: Env -> Cps -> E.CompilerM (Env, Value)
-evalCps env ((Add, args, ret) :>> cont) = do
+evalCps env ((Add args ret) :>> cont) = do
   acc <- liftIO $ newIORef 0
   forM_ args $ \arg -> do
     let (Num v) = readIfId env arg
@@ -91,23 +106,23 @@ evalCps env ((Add, args, ret) :>> cont) = do
   res <- liftIO $ readIORef acc
   let newenv = pushToEnv ret (Num res) env
   evalCps newenv cont
-evalCps env ((Cps.LT, [lhs, rhs], ret) :|> [then_, else_]) = do
+evalCps env ((Lt [lhs, rhs] ret) :|> [then_, else_]) = do
   let (Num lhs') = readIfId env lhs
   let (Num rhs') = readIfId env rhs
   if lhs' < rhs'
     then evalCps env then_
     else evalCps env else_
-evalCps env ((DebugLog msg, ops, _) :>> cont) = do
+evalCps env ((DebugLog msg ops _) :>> cont) = do
   Debug.traceM $ msg <> ": " <> show ops
   evalCps env cont
 evalCps env (DebugNop val) = pure (env, val)
 
 cps1 :: Cps
 cps1 =
-  (Add, [Id "x", Constant $ Num 2], Just "t")
-    :>> (Cps.LT, [Id "t", Constant $ Num 10], Just "r")
-      :|> [ (DebugLog "t", [], Nothing) :>> DebugNop (Bool True),
-            (DebugLog "f", [], Nothing) :>> DebugNop (Bool False)
+  Add [Id "x", Constant $ Num 2] (Just "t")
+    :>> Lt [Id "t", Constant $ Num 10] (Just "r")
+      :|> [ DebugLog "t" [] Nothing :>> DebugNop (Bool True),
+            DebugLog "f" [] Nothing :>> DebugNop (Bool False)
           ]
 
 -- (FIX ([g (k x)
@@ -118,7 +133,6 @@ cps1 =
 --    ...)
 cps2 :: Cps
 cps2 =
-  (FixF, "g", ["k", "x"], ((FixF, "f", ["c", "y"], ((Add, [Id "y", Id "y"], Just "t") :>> (AppF (Id "c") [Id "t"]))) :&> undefined))
-    :&> undefined
+  undefined
 
 -- :&> ((Add, ))
