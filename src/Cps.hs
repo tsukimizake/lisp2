@@ -34,11 +34,17 @@ data FixSym = FixF | FixS
 data Cps
   = (PrimSym, [Op], Maybe Sym) :>> Cps
   | (BranchSym, [Op], Maybe Sym) :|> [Cps]
-  | (FixSym, [Bind]) :&> Cps
+  | (FixSym, Sym, [Sym], Cps) :&> Cps
   | AppF Op [Op]
   | AppB Op [Op]
   | DebugNop Value
   deriving (Show, Eq)
+
+infixr 8 :>>
+
+infixr 8 :|>
+
+infixr 8 :&>
 
 (>>:=) :: (Monad m) => (PrimSym, [Op], Maybe Sym) -> m Cps -> m Cps
 l >>:= r = do
@@ -50,13 +56,16 @@ l |>:= r = do
   k <- r
   pure $ l :|> k
 
-(&>:=) :: (Monad m) => (FixSym, [Bind]) -> m Cps -> m Cps
+(&>:=) :: (Monad m) => (FixSym, Sym, [Sym], Cps) -> m Cps -> m Cps
 l &>:= r = do
   k <- r
   pure $ l :&> k
 
-data Bind = Bind Sym [Sym] Cps
-  deriving (Show, Eq)
+infixr 8 >>:=
+
+infixr 8 |>:=
+
+infixr 8 &>:=
 
 readIfId :: Env -> Op -> Value
 readIfId env op =
@@ -96,12 +105,20 @@ evalCps env (DebugNop val) = pure (env, val)
 cps1 :: Cps
 cps1 =
   (Add, [Id "x", Constant $ Num 2], Just "t")
-    :>> ( (Cps.LT, [Id "t", Constant $ Num 10], Just "r")
-            :|> [ (DebugLog "t", [], Nothing) :>> DebugNop (Bool True),
-                  (DebugLog "f", [], Nothing) :>> DebugNop (Bool False)
-                ]
-        )
+    :>> (Cps.LT, [Id "t", Constant $ Num 10], Just "r")
+      :|> [ (DebugLog "t", [], Nothing) :>> DebugNop (Bool True),
+            (DebugLog "f", [], Nothing) :>> DebugNop (Bool False)
+          ]
 
+-- (FIX ([g (k x)
+--   (FIX ([f (c y) (+ [y y] [t] [(APP c (t))])])
+--     (+ [x 10] [s]
+--        [(FIX ([d (t) (+ [t 1] [r] [(APP k (r))])])
+--           (APP f (d s)))]))])
+--    ...)
 cps2 :: Cps
 cps2 =
-  undefined
+  (FixF, "g", ["k", "x"], ((FixF, "f", ["c", "y"], ((Add, [Id "y", Id "y"], Just "t") :>> (AppF (Id "c") [Id "t"]))) :&> undefined))
+    :&> undefined
+
+-- :&> ((Add, ))
