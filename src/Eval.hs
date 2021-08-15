@@ -155,6 +155,7 @@ eval env (Atom x) = do
   if bound
     then getVar env x
     else pure (Atom x)
+eval env x = throwError $ "malformed expr " <> showText x
 
 -- read/write env
 
