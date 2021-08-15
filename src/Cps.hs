@@ -9,6 +9,7 @@ import Data.Function
 import Data.IORef
 import Data.Map as M
 import Data.Text as T
+import qualified Data.Type.Bool as E
 import qualified Debug.Trace as Debug
 import Types (Expr, Value (..))
 import qualified Types as E
@@ -108,7 +109,7 @@ evalCps env ((Add args ret) :>> cont) = do
   res <- liftIO $ readIORef acc
   newenv <- case ret of
     Just r -> do
-      cont <- gensym
+      cont <- E.gensym
       pure $ pushToEnv ret (FixS r [cont] (AppF (Id cont) [Constant (Num res)])) env
     Nothing -> pure env
   evalCps newenv cont
@@ -124,6 +125,8 @@ evalCps env (DebugLog msg ops _ :>> cont) = do
 evalCps env (FixF fn args body :&> cont) = do undefined
 evalCps env (FixS fn args body :&> cont) = evalCps env (FixF fn args body :&> cont) -- do the same
 evalCps env (DebugNop val) = pure (env, val)
+
+cps1env = FixS "x" ["cont"] (AppF (Id "cont") [Constant (Num 1)])
 
 -- (if (< (+ x 2) 10) then (debug "t") else (debug "f"))
 cps1 :: Cps
@@ -158,3 +161,15 @@ cps2 =
         :&> AppB (Id "f") [Id "d", Id "s"]
     )
     :&> DebugNop (Num 0)
+
+fromExpr :: E.Expr -> (Op -> E.CompilerM Cps) -> E.CompilerM Cps
+fromExpr (E.Constant v) c = c $ Constant v
+fromExpr (E.Atom v) c = c $ Id v
+-- TODO multi args
+fromExpr (E.OpList "+" [l, r]) c = do
+  ret <- E.gensym
+  let c' = \p0 -> fromExpr r c''
+      c'' = \p1 -> Add [p0, p1] (Just ret) >>:= c (Id ret)
+  fromExpr l c'
+fromExpr (E.OpList "if" [cond, then_, else_]) c = do
+  undefined
