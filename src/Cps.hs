@@ -15,7 +15,7 @@ import qualified Types as E
 
 type Sym = Text
 
-type Env = Map Sym Value
+type Env = Map Sym Fix
 
 data Op
   = Id Sym
@@ -55,11 +55,11 @@ data Cps
   | DebugNop Value
   deriving (Show, Eq)
 
-infixr 8 :>>
+infixr 7 :>>
 
-infixr 8 :|>
+infixr 7 :|>
 
-infixr 8 :&>
+infixr 7 :&>
 
 (>>:=) :: (Monad m) => Prim -> m Cps -> m Cps
 l >>:= r = do
@@ -76,22 +76,24 @@ l &>:= r = do
   k <- r
   pure $ l :&> k
 
-infixr 8 >>:=
+infixr 7 >>:=
 
-infixr 8 |>:=
+infixr 7 |>:=
 
-infixr 8 &>:=
+infixr 7 &>:=
 
 readIfId :: Env -> Op -> Value
 readIfId env op =
-  case op of
-    Id k -> case env M.!? k of
-      Nothing -> error $ T.unpack $ k <> " not found in " <> E.showText env
-      Just r -> r
-    Constant v -> v
+  undefined
 
-pushToEnv :: Maybe Sym -> Value -> Env -> Env
-pushToEnv (Just k) v env = M.insert k v env
+--   case op of
+--     Id k -> case env M.!? k of
+--       Nothing -> error $ T.unpack $ k <> " not found in " <> E.showText env
+--       Just r -> r
+--     Constant v -> v
+
+pushToEnv :: Maybe Sym -> Fix -> Env -> Env
+pushToEnv (Just k) v env = do M.insert k v env
 pushToEnv Nothing v env = env
 
 unwrapOne :: [a] -> a
@@ -104,19 +106,26 @@ evalCps env ((Add args ret) :>> cont) = do
     let (Num v) = readIfId env arg
     liftIO $ modifyIORef acc (+ v)
   res <- liftIO $ readIORef acc
-  let newenv = pushToEnv ret (Num res) env
+  newenv <- case ret of
+    Just r -> do
+      cont <- gensym
+      pure $ pushToEnv ret (FixS r [cont] (AppF (Id cont) [Constant (Num res)])) env
+    Nothing -> pure env
   evalCps newenv cont
-evalCps env ((Lt [lhs, rhs] ret) :|> [then_, else_]) = do
+evalCps env (Lt [lhs, rhs] ret :|> [then_, else_]) = do
   let (Num lhs') = readIfId env lhs
   let (Num rhs') = readIfId env rhs
   if lhs' < rhs'
     then evalCps env then_
     else evalCps env else_
-evalCps env ((DebugLog msg ops _) :>> cont) = do
+evalCps env (DebugLog msg ops _ :>> cont) = do
   Debug.traceM $ msg <> ": " <> show ops
   evalCps env cont
+evalCps env (FixF fn args body :&> cont) = do undefined
+evalCps env (FixS fn args body :&> cont) = evalCps env (FixF fn args body :&> cont) -- do the same
 evalCps env (DebugNop val) = pure (env, val)
 
+-- (if (< (+ x 2) 10) then (debug "t") else (debug "f"))
 cps1 :: Cps
 cps1 =
   Add [Id "x", Constant $ Num 2] (Just "t")
@@ -125,14 +134,27 @@ cps1 =
             DebugLog "f" [] Nothing :>> DebugNop (Bool False)
           ]
 
--- (FIX ([g (k x)
---   (FIX ([f (c y) (+ [y y] [t] [(APP c (t))])])
---     (+ [x 10] [s]
---        [(FIX ([d (t) (+ [t 1] [r] [(APP k (r))])])
---           (APP f (d s)))]))])
---    ...)
+-- (define (g x)
+--   (fix ((f (y) (+ y y)))
+--     (+ (f (+ x 10)) 1)))
 cps2 :: Cps
 cps2 =
-  undefined
-
--- :&> ((Add, ))
+  FixF
+    "g"
+    ["k", "x"]
+    ( FixF
+        "f"
+        ["c", "y"]
+        ( Add [Id "y", Id "y"] (Just "t")
+            :>> AppF (Id "c") [Id "t"]
+        )
+        :&> Add [Id "x", Constant $ Num 10] (Just "s")
+        :>> FixS
+          "d"
+          ["t"]
+          ( Add [Id "t", Constant $ Num 1] (Just "r")
+              :>> AppB (Id "k") [Id "r"]
+          )
+        :&> AppB (Id "f") [Id "d", Id "s"]
+    )
+    :&> DebugNop (Num 0)
