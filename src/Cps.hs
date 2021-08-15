@@ -162,14 +162,15 @@ cps2 =
     )
     :&> DebugNop (Num 0)
 
+{-# ANN fromExpr ("HLint: ignore Avoid lambda" :: String) #-}
 fromExpr :: E.Expr -> (Op -> E.CompilerM Cps) -> E.CompilerM Cps
 fromExpr (E.Constant v) c = c $ Constant v
 fromExpr (E.Atom v) c = c $ Id v
 -- TODO multi args
 fromExpr (E.OpList "+" [l, r]) c = do
   ret <- E.gensym
-  let c' = \p0 -> fromExpr r c''
-      c'' = \p1 -> Add [p0, p1] (Just ret) >>:= c (Id ret)
+  let c' = \p0 -> fromExpr r (c'' p0)
+      c'' = \p0 p1 -> Add [p0, p1] (Just ret) >>:= c (Id ret)
   fromExpr l c'
 fromExpr (E.OpList "if" [cond, then_, else_]) c = do
   undefined
