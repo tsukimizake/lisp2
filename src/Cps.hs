@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -Wno-deferred-out-of-scope-variables #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 
 module Cps where
@@ -173,4 +172,11 @@ fromExpr (E.OpList "+" [l, r]) c = do
       c'' = \p0 p1 -> Add [p0, p1] (Just ret) >>:= c (Id ret)
   fromExpr l c'
 fromExpr (E.OpList "if" [cond, then_, else_]) c = do
-  undefined
+  j <- E.gensym
+  v <- E.gensym
+
+  cv <- c (Id v)
+  t' <- fromExpr then_ (\x -> pure $ AppF (Id j) [x])
+  e' <- fromExpr else_ (\x -> pure $ AppF (Id j) [x])
+  let c' = \x -> FixS j [v] cv :&> Eq [x, Constant $ Bool True] Nothing :|> [t', e']
+  fromExpr cond (pure . c')
