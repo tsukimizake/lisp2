@@ -127,6 +127,7 @@ evalCps env (DebugNop val) = pure (env, val)
 
 cps1env = FixS "x" ["cont"] (AppF (Id "cont") [Constant (Num 1)])
 
+{- ORMOLU_DISABLE -}
 -- (if (< (+ x 2) 10) then (debug "t") else (debug "f"))
 cps1 :: Cps
 cps1 =
@@ -136,30 +137,27 @@ cps1 =
             DebugLog "f" [] Nothing :>> DebugNop (Bool False)
           ]
 
+
+
 -- (define (g x)
 --   (fix ((f (y) (+ y y)))
 --     (+ (f (+ x 10)) 1)))
 cps2 :: Cps
 cps2 =
-  FixF
-    "g"
-    ["k", "x"]
-    ( FixF
-        "f"
-        ["c", "y"]
+  FixF "g" ["k", "x"]
+    ( FixF "f" ["c", "y"]
         ( Add [Id "y", Id "y"] (Just "t")
             :>> AppF (Id "c") [Id "t"]
         )
         :&> Add [Id "x", Constant $ Num 10] (Just "s")
-        :>> FixS
-          "d"
-          ["t"]
+        :>> FixS "d" ["t"]
           ( Add [Id "t", Constant $ Num 1] (Just "r")
               :>> AppB (Id "k") [Id "r"]
           )
         :&> AppB (Id "f") [Id "d", Id "s"]
     )
     :&> DebugNop (Num 0)
+{- ORMOLU_ENABLE -}
 
 {-# ANN fromExpr ("HLint: ignore Avoid lambda" :: String) #-}
 fromExpr :: E.Expr -> (Op -> E.CompilerM Cps) -> E.CompilerM Cps
