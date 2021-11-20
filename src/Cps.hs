@@ -55,6 +55,10 @@ data Cps
   | DebugNop Value
   deriving (Show, Eq)
 
+nop :: Op -> Cps
+nop (Constant val ) = DebugNop val
+nop (Id _ ) = DebugNop (Num 0)
+
 infixr 7 :>>
 
 infixr 7 :|>
