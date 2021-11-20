@@ -92,9 +92,8 @@ readIfId env op =
 --       Just r -> r
 --     Constant v -> v
 
-pushToEnv :: Maybe Sym -> Fix -> Env -> Env
-pushToEnv (Just k) v env = do M.insert k v env
-pushToEnv Nothing v env = env
+pushToEnv :: Sym -> Fix -> Env -> Env
+pushToEnv k v env = do M.insert k v env
 
 unwrapOne :: [a] -> a
 unwrapOne = Prelude.head
@@ -109,7 +108,7 @@ evalCps env ((Add args ret) :>> cont) = do
   newenv <- case ret of
     Just r -> do
       cont <- E.gensym
-      pure $ pushToEnv ret (FixS r [cont] (AppF (Id cont) [Constant (Num res)])) env
+      pure $ pushToEnv r (FixS r [cont] (AppF (Id cont) [Constant (Num res)])) env
     Nothing -> pure env
   evalCps newenv cont
 evalCps env (Lt [lhs, rhs] ret :|> [then_, else_]) = do
@@ -121,7 +120,9 @@ evalCps env (Lt [lhs, rhs] ret :|> [then_, else_]) = do
 evalCps env (DebugLog msg ops _ :>> cont) = do
   Debug.traceM $ msg <> ": " <> show ops
   evalCps env cont
-evalCps env (FixF fn args body :&> cont) = do undefined
+evalCps env (fix@(FixF fn args body) :&> cont) = do
+  let env' = pushToEnv fn fix env
+  undefined
 evalCps env (FixS fn args body :&> cont) = evalCps env (FixF fn args body :&> cont) -- do the same
 evalCps env (DebugNop val) = pure (env, val)
 
@@ -132,31 +133,37 @@ cps1env = FixS "x" ["cont"] (AppF (Id "cont") [Constant (Num 1)])
 cps1 :: Cps
 cps1 =
   Add [Id "x", Constant $ Num 2] (Just "t")
-    :>> Lt [Id "t", Constant $ Num 10] (Just "r")
+    :>> Lt [Id "t", Constant $ Num 10] Nothing
       :|> [ DebugLog "t" [] Nothing :>> DebugNop (Bool True),
             DebugLog "f" [] Nothing :>> DebugNop (Bool False)
           ]
 
-
-
 -- (define (g x)
---   (fix ((f (y) (+ y y)))
+--   (fix ((f (y) (+ x y)))
 --     (+ (f (+ x 10)) 1)))
 cps2 :: Cps
 cps2 =
   FixF "g" ["k", "x"]
     ( FixF "f" ["c", "y"]
-        ( Add [Id "y", Id "y"] (Just "t")
-            :>> AppF (Id "c") [Id "t"]
+        ( Add [Id "x", Id "y"] (Just "t")
+            :>> AppB (Id "c") [Id "t"]
         )
         :&> Add [Id "x", Constant $ Num 10] (Just "s")
         :>> FixS "d" ["t"]
           ( Add [Id "t", Constant $ Num 1] (Just "r")
               :>> AppB (Id "k") [Id "r"]
           )
-        :&> AppB (Id "f") [Id "d", Id "s"]
+        :&> AppF (Id "f") [Id "d", Id "s"]
     )
     :&> DebugNop (Num 0)
+
+-- ; recursion!
+-- (define (f x)
+--   (f x))
+cps3 :: Cps
+cps3 = FixF "f" ["k", "x"]
+  (AppF (Id "f") [Id "x"])
+  :&> DebugNop (Num 0)
 {- ORMOLU_ENABLE -}
 
 {-# ANN fromExpr ("HLint: ignore Avoid lambda" :: String) #-}
