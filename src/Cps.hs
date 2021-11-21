@@ -3,17 +3,18 @@
 module Cps where
 
 import Control.Monad
+import Control.Monad.Except (throwError)
 import Control.Monad.IO.Class
 import Data.Function
 import Data.IORef
 import Data.Map as M
-import Data.Text as T
+import qualified Data.Text as T
+import Data.Text (Text)
 import qualified Data.Type.Bool as E
 import Debug.Trace (traceM, traceShowM)
 import qualified Debug.Trace as Debug
 import Types (Expr, Value (..))
 import qualified Types as E
-import Control.Monad.Except (throwError)
 
 type Sym = Text
 
@@ -99,7 +100,7 @@ readIfId env op =
 --     Constant v -> v
 
 pushToEnv :: Sym -> Fix -> Env -> Env
-pushToEnv k v env = M.insert k v env
+pushToEnv = M.insert
 
 unwrapOne :: [a] -> a
 unwrapOne = Prelude.head
@@ -172,6 +173,13 @@ cps3 = FixF "f" ["k", "x"]
   :&> DebugNop (Num 0)
 {- ORMOLU_ENABLE -}
 
+-- fromLogicalOp :: Sym -> (Expr, Expr) -> (Op -> E.CompilerM Cps) -> E.CompilerM Cps
+-- fromLogicalOp f (l, r) c = do
+--   ret <- E.gensym
+--   let c' = fromExpr r . c''
+--       c'' = \p0 p1 -> Lt [p0, p1] (Just ret) >>:= c (Id ret)
+--   fromExpr l c'
+
 {-# ANN fromExpr ("HLint: ignore Avoid lambda" :: String) #-}
 fromExpr :: E.Expr -> (Op -> E.CompilerM Cps) -> E.CompilerM Cps
 fromExpr (E.Constant v) c = c $ Constant v
@@ -189,12 +197,21 @@ fromExpr (E.OpList "debug" [E.Constant val]) c = do
 fromExpr (E.OpList "debug" _) c = throwError "malformed debug"
 fromExpr (E.OpList "<" [lhs, rhs]) c =
   undefined
+  -- fromLogicalOp "<" (lhs, rhs) c
 fromExpr (E.OpList "if" [cond, E.Atom "then", then_, E.Atom "else", else_]) c = do
   j <- E.gensym
   v <- E.gensym
   cv <- c (Id v)
-  t' <- fromExpr then_ (\x -> pure $ AppF (Id j) [x])
-  e' <- fromExpr else_ (\x -> pure $ AppF (Id j) [x])
+  t' <- fromExpr then_ (genApply (Id j))
+  e' <- fromExpr else_ (genApply (Id j))
   let c' = \x -> FixS j [v] cv :&> Eq [x, Constant $ Bool True] Nothing :|> [t', e']
   fromExpr cond (pure . c')
+  where
+    genApply f x = pure $ AppF f [x]
 fromExpr (E.OpList "if" _) c = throwError "malformed if"
+
+
+fromExprList :: [E.Expr] -> ([Op] -> E.CompilerM Cps) -> E.CompilerM Cps
+fromExprList exprs = g exprs []
+  where g [] es c' = c' (reverse es)
+        g (h:t) es c' = fromExpr h (\x -> g t (x : es) c')
