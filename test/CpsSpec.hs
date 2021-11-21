@@ -7,6 +7,7 @@ import Test.Hspec
 import Text.Parsec
 import Types
 import Cps
+import Debug.Trace
 
 testToCps :: Text -> Cps -> Expectation
 testToCps src expected =

@@ -47,7 +47,7 @@ test-suite test
   type:             exitcode-stdio-1.0
   main-is:          Spec.hs
   hs-source-dirs:   test
-  other-modules:    EvalSpec, ParserSpec
+  other-modules:    EvalSpec, ParserSpec, CpsSpec
 
   -- LANGUAGE extensions used by modules in this package.
   default-extensions: OverloadedStrings

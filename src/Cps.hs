@@ -9,9 +9,11 @@ import Data.IORef
 import Data.Map as M
 import Data.Text as T
 import qualified Data.Type.Bool as E
+import Debug.Trace (traceM, traceShowM)
 import qualified Debug.Trace as Debug
 import Types (Expr, Value (..))
 import qualified Types as E
+import Control.Monad.Except (throwError)
 
 type Sym = Text
 
@@ -56,8 +58,8 @@ data Cps
   deriving (Show, Eq)
 
 nop :: Op -> Cps
-nop (Constant val ) = DebugNop val
-nop (Id _ ) = DebugNop (Num 0)
+nop (Constant val) = DebugNop val
+nop (Id _) = DebugNop (Num 0)
 
 infixr 7 :>>
 
@@ -97,7 +99,7 @@ readIfId env op =
 --     Constant v -> v
 
 pushToEnv :: Sym -> Fix -> Env -> Env
-pushToEnv k v env = do M.insert k v env
+pushToEnv k v env = M.insert k v env
 
 unwrapOne :: [a] -> a
 unwrapOne = Prelude.head
@@ -174,18 +176,25 @@ cps3 = FixF "f" ["k", "x"]
 fromExpr :: E.Expr -> (Op -> E.CompilerM Cps) -> E.CompilerM Cps
 fromExpr (E.Constant v) c = c $ Constant v
 fromExpr (E.Atom v) c = c $ Id v
--- TODO multi args
 fromExpr (E.OpList "+" [l, r]) c = do
+  -- TODO multi args
   ret <- E.gensym
-  let c' = \p0 -> fromExpr r (c'' p0)
+  let c' = fromExpr r . c''
       c'' = \p0 p1 -> Add [p0, p1] (Just ret) >>:= c (Id ret)
   fromExpr l c'
-fromExpr (E.OpList "if" [cond, then_, else_]) c = do
+fromExpr (E.OpList "debug" [E.Constant val]) c = do
+  -- TODO read env sitai
+  traceShowM val
+  DebugLog (show val) [] Nothing >>:= c (Constant val)
+fromExpr (E.OpList "debug" _) c = throwError "malformed debug"
+fromExpr (E.OpList "<" [lhs, rhs]) c =
+  undefined
+fromExpr (E.OpList "if" [cond, E.Atom "then", then_, E.Atom "else", else_]) c = do
   j <- E.gensym
   v <- E.gensym
-
   cv <- c (Id v)
   t' <- fromExpr then_ (\x -> pure $ AppF (Id j) [x])
   e' <- fromExpr else_ (\x -> pure $ AppF (Id j) [x])
   let c' = \x -> FixS j [v] cv :&> Eq [x, Constant $ Bool True] Nothing :|> [t', e']
   fromExpr cond (pure . c')
+fromExpr (E.OpList "if" _) c = throwError "malformed if"
