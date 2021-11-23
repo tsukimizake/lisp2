@@ -7,13 +7,14 @@ import Control.Monad.Except (throwError)
 import Control.Monad.IO.Class
 import Data.Function
 import Data.IORef
-import Data.Map as M
-import qualified Data.Text as T
+import qualified Data.Map as M
+import Data.Map (Map)
 import Data.Text (Text)
+import qualified Data.Text as T
 import qualified Data.Type.Bool as E
 import Debug.Trace (traceM, traceShowM)
 import qualified Debug.Trace as Debug
-import Types (Expr, Value (..))
+import Types (Expr, Value (..), showText)
 import qualified Types as E
 
 type Sym = Text
@@ -45,7 +46,7 @@ data Branch
   deriving (Show, Eq)
 
 data Fix
-  = FixF Sym [Sym] Cps
+  = FixH Sym [Sym] Cps
   | FixS Sym [Sym] Cps
   deriving (Show, Eq)
 
@@ -127,12 +128,13 @@ evalCps env (Lt [lhs, rhs] ret :|> [then_, else_]) = do
 evalCps env (DebugLog msg ops _ :>> cont) = do
   Debug.traceM $ msg <> ": " <> show ops
   evalCps env cont
-evalCps env (fix@(FixF fn args body) :&> cont) = do
+evalCps env (fix@(FixH fn args body) :&> cont) = do
   let env' = pushToEnv fn fix env
   undefined
-evalCps env (FixS fn args body :&> cont) = evalCps env (FixF fn args body :&> cont) -- do the same
+evalCps env (FixS fn args body :&> cont) = evalCps env (FixH fn args body :&> cont) -- do the same
 evalCps env (DebugNop val) = pure (env, val)
 
+cps1env :: Fix
 cps1env = FixS "x" ["cont"] (AppF (Id "cont") [Constant (Num 1)])
 
 {- ORMOLU_DISABLE -}
@@ -150,8 +152,8 @@ cps1 =
 --     (+ (f (+ x 10)) 1)))
 cps2 :: Cps
 cps2 =
-  FixF "g" ["k", "x"]
-    ( FixF "f" ["c", "y"]
+  FixH "g" ["k", "x"]
+    ( FixH "f" ["c", "y"]
         ( Add [Id "x", Id "y"] (Just "t")
             :>> AppB (Id "c") [Id "t"]
         )
@@ -168,7 +170,7 @@ cps2 =
 -- (define (f x)
 --   (f x))
 cps3 :: Cps
-cps3 = FixF "f" ["k", "x"]
+cps3 = FixH "f" ["k", "x"]
   (AppF (Id "f") [Id "x"])
   :&> DebugNop (Num 0)
 {- ORMOLU_ENABLE -}
@@ -184,6 +186,11 @@ cps3 = FixF "f" ["k", "x"]
 fromExpr :: E.Expr -> (Op -> E.CompilerM Cps) -> E.CompilerM Cps
 fromExpr (E.Constant v) c = c $ Constant v
 fromExpr (E.Atom v) c = c $ Id v
+fromExpr (E.OpList "fix"  [E.Atom f, E.List args, bound, body ]) c = do
+  -- TODO 複数fixできるように
+  -- :&>の左辺を[Fix]にしてmap fBindにするかんじ?
+  (f', args', bound') <- fBind f args bound
+  FixH f' args' bound' &>:= fromExpr body c
 fromExpr (E.OpList "+" [l, r]) c = do
   -- TODO multi args
   ret <- E.gensym
@@ -197,7 +204,7 @@ fromExpr (E.OpList "debug" [E.Constant val]) c = do
 fromExpr (E.OpList "debug" _) c = throwError "malformed debug"
 fromExpr (E.OpList "<" [lhs, rhs]) c =
   undefined
-  -- fromLogicalOp "<" (lhs, rhs) c
+-- fromLogicalOp "<" (lhs, rhs) c
 fromExpr (E.OpList "if" [cond, E.Atom "then", then_, E.Atom "else", else_]) c = do
   j <- E.gensym
   v <- E.gensym
@@ -206,12 +213,30 @@ fromExpr (E.OpList "if" [cond, E.Atom "then", then_, E.Atom "else", else_]) c = 
   e' <- fromExpr else_ (genApply (Id j))
   let c' = \x -> FixS j [v] cv :&> Eq [x, Constant $ Bool True] Nothing :|> [t', e']
   fromExpr cond (pure . c')
+  -- case cond of
+  --   (E.OpList "<" [l, r]) -> Lt [l, r] Nothing :|> [t', e']
+  --   _ -> fromExpr cond (pure . c')
   where
     genApply f x = pure $ AppF f [x]
+    isSimpleCompare :: E.Expr -> Bool
+    isSimpleCompare (E.OpList op _) = op `elem` ["<", ">", "=", "/="]
+    isSimpleCompare _ = False
+    fromLogicalOp = undefined
 fromExpr (E.OpList "if" _) c = throwError "malformed if"
-
 
 fromExprList :: [E.Expr] -> ([Op] -> E.CompilerM Cps) -> E.CompilerM Cps
 fromExprList exprs = g exprs []
-  where g [] es c' = c' (reverse es)
-        g (h:t) es c' = fromExpr h (\x -> g t (x : es) c')
+  where
+    g [] es c' = c' (reverse es)
+    g (h : t) es c' = fromExpr h (\x -> g t (x : es) c')
+
+fBind :: Text -> [Expr] -> Expr -> E.CompilerM (Text, [Text], Cps)
+fBind  f params body = do
+  k <- E.gensym
+  params' <- mapM coerceToSym params
+  body' <- fromExpr body (\x -> pure $ AppB (Id k) [x])
+  pure (f, k : params', body')
+    where
+      coerceToSym :: E.Expr -> E.CompilerM Text
+      coerceToSym (E.Atom s) = pure s
+      coerceToSym e = throwError $ showText e <> " is not sym"
