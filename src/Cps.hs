@@ -1,3 +1,4 @@
+{-# LANGUAGE KindSignatures #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 
 module Cps where
@@ -7,8 +8,9 @@ import Control.Monad.Except (throwError)
 import Control.Monad.IO.Class
 import Data.Function
 import Data.IORef
-import qualified Data.Map as M
+import Data.Kind (Type)
 import Data.Map (Map)
+import qualified Data.Map as M
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Type.Bool as E
@@ -69,30 +71,34 @@ infixr 7 :|>
 
 infixr 7 :&>
 
-(>>:=) :: (Monad m) => Prim -> m Cps -> m Cps
-l >>:= r = do
-  k <- r
-  pure $ l :>> k
+infixr 7 >>=:
 
-(|>:=) :: (Monad m) => Branch -> m [Cps] -> m Cps
-l |>:= r = do
-  k <- r
-  pure $ l :|> k
-
-(&>:=) :: (Monad m) => Fix -> m Cps -> m Cps
-l &>:= r = do
-  k <- r
-  pure $ l :&> k
-
-infixr 7 >>:=
-
-infixr 7 |>:=
-
-infixr 7 &>:=
+infixr 7 |>=:
 
 readIfId :: Env -> Op -> Value
 readIfId env op =
   undefined
+
+class CpsBranch a where
+  (|>=:) :: (Monad m) => a -> m [Cps] -> m Cps
+
+instance CpsBranch Branch where
+  l |>=: r = do
+    k <- r
+    pure $ l :|> k
+
+class CpsLhs a where
+  (>>=:) :: (Monad m) => a -> m Cps -> m Cps
+
+instance CpsLhs Prim where
+  l >>=: r = do
+    k <- r
+    pure $ l :>> k
+
+instance CpsLhs Fix where
+  l >>=: r = do
+    k <- r
+    pure $ l :&> k
 
 --   case op of
 --     Id k -> case env M.!? k of
@@ -179,28 +185,29 @@ cps3 = FixH "f" ["k", "x"]
 -- fromLogicalOp f (l, r) c = do
 --   ret <- E.gensym
 --   let c' = fromExpr r . c''
---       c'' = \p0 p1 -> Lt [p0, p1] (Just ret) >>:= c (Id ret)
+--       c'' = \p0 p1 -> Lt [p0, p1] (Just ret) >>=: c (Id ret)
 --   fromExpr l c'
 
 {-# ANN fromExpr ("HLint: ignore Avoid lambda" :: String) #-}
 fromExpr :: E.Expr -> (Op -> E.CompilerM Cps) -> E.CompilerM Cps
 fromExpr (E.Constant v) c = c $ Constant v
 fromExpr (E.Atom v) c = c $ Id v
-fromExpr (E.OpList "fix"  [E.Atom f, E.List args, bound, body ]) c = do
+fromExpr (E.OpList "fix" [E.Atom f, E.List args, bound, body]) c = do
+  -- (fix f (a b) (+ a b) (f 1 2)) みたいな使いかたになりそう
   -- TODO 複数fixできるように
   -- :&>の左辺を[Fix]にしてmap fBindにするかんじ?
   (f', args', bound') <- fBind f args bound
-  FixH f' args' bound' &>:= fromExpr body c
+  FixH f' args' bound' >>=: fromExpr body c
 fromExpr (E.OpList "+" [l, r]) c = do
   -- TODO multi args
   ret <- E.gensym
   let c' = fromExpr r . c''
-      c'' = \p0 p1 -> Add [p0, p1] (Just ret) >>:= c (Id ret)
+      c'' = \p0 p1 -> Add [p0, p1] (Just ret) >>=: c (Id ret)
   fromExpr l c'
 fromExpr (E.OpList "debug" [E.Constant val]) c = do
   -- TODO read env sitai
   traceShowM val
-  DebugLog (show val) [] Nothing >>:= c (Constant val)
+  DebugLog (show val) [] Nothing >>=: c (Constant val)
 fromExpr (E.OpList "debug" _) c = throwError "malformed debug"
 fromExpr (E.OpList "<" [lhs, rhs]) c =
   undefined
@@ -213,9 +220,6 @@ fromExpr (E.OpList "if" [cond, E.Atom "then", then_, E.Atom "else", else_]) c = 
   e' <- fromExpr else_ (genApply (Id j))
   let c' = \x -> FixS j [v] cv :&> Eq [x, Constant $ Bool True] Nothing :|> [t', e']
   fromExpr cond (pure . c')
-  -- case cond of
-  --   (E.OpList "<" [l, r]) -> Lt [l, r] Nothing :|> [t', e']
-  --   _ -> fromExpr cond (pure . c')
   where
     genApply f x = pure $ AppF f [x]
     isSimpleCompare :: E.Expr -> Bool
@@ -231,12 +235,12 @@ fromExprList exprs = g exprs []
     g (h : t) es c' = fromExpr h (\x -> g t (x : es) c')
 
 fBind :: Text -> [Expr] -> Expr -> E.CompilerM (Text, [Text], Cps)
-fBind  f params body = do
+fBind f params body = do
   k <- E.gensym
   params' <- mapM coerceToSym params
-  body' <- fromExpr body (\x -> pure $ AppB (Id k) [x])
+  body' <- fromExpr body (\retSym -> pure $ AppB (Id k) [retSym])
   pure (f, k : params', body')
-    where
-      coerceToSym :: E.Expr -> E.CompilerM Text
-      coerceToSym (E.Atom s) = pure s
-      coerceToSym e = throwError $ showText e <> " is not sym"
+  where
+    coerceToSym :: E.Expr -> E.CompilerM Text
+    coerceToSym (E.Atom s) = pure s
+    coerceToSym e = throwError $ showText e <> " is not sym"
