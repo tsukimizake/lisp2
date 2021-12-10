@@ -51,7 +51,7 @@ data Expr
   | Atom Text
   | List [Expr]
   | Func {params :: [Text], body :: [Expr], closure :: Env}
-  | Prim {name :: Text, op :: [Expr] -> CompilerM Expr}
+  | Prim {name :: Text, op :: [Expr] -> EvalM Expr}
   | Case {key :: Expr, clauses :: [Clause]}
 
 data Clause = Clause {patStr :: Text, patFunc :: Expr -> Bool, clauseBody :: Expr}
@@ -80,11 +80,11 @@ instance Eq Expr where
 
 type Error = Text
 
-newtype CompilerM a = CompilerM (GensymT (ExceptT Error IO) a)
+newtype EvalM a = EvalM (GensymT (ExceptT Error IO) a)
   deriving (Functor, Applicative, Monad, MonadError Error, MonadIO)
 
-runIOThrows :: CompilerM a -> IO (Either Error a)
-runIOThrows (CompilerM x) = runExceptT $ runGensymT x
+runIOThrows :: EvalM a -> IO (Either Error a)
+runIOThrows (EvalM x) = runExceptT $ runGensymT x
 
 pattern OpList x xs = (List (Atom x : xs))
 
@@ -96,8 +96,8 @@ pattern B x = Constant (Bool x)
 
 pattern S x = Constant (Str x)
 
-gensym :: CompilerM Text
-gensym = CompilerM Gensym.gensym
+gensym :: EvalM Text
+gensym = EvalM Gensym.gensym
 
 traverseExpr :: (Monad m) => (Expr -> m Expr) -> Expr -> m Expr
 traverseExpr f x@(List xs) = do

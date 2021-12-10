@@ -16,15 +16,15 @@ import Types
 typeError :: Text -> Expr -> Text
 typeError expected actual = "type error, " <> expected <> " expected on " <> showText actual
 
-coerceNum :: Expr -> CompilerM Int
+coerceNum :: Expr -> EvalM Int
 coerceNum (N v) = pure v
 coerceNum x = throwError $ typeError "num" x
 
-coerceBool :: Expr -> CompilerM Bool
+coerceBool :: Expr -> EvalM Bool
 coerceBool (B v) = pure v
 coerceBool e = throwError $ typeError "bool" e
 
-evalInfix :: (Expr -> a -> CompilerM Expr) -> [Expr] -> (Expr -> CompilerM a) -> CompilerM Expr
+evalInfix :: (Expr -> a -> EvalM Expr) -> [Expr] -> (Expr -> EvalM a) -> EvalM Expr
 evalInfix op args coerce = do
   if null args
     then throwError "no arg"
@@ -38,9 +38,9 @@ evalInfix op args coerce = do
         h
         t
 
-evalMath :: Maybe Int -> (Int -> Int -> Int) -> [Expr] -> CompilerM Expr
+evalMath :: Maybe Int -> (Int -> Int -> Int) -> [Expr] -> EvalM Expr
 evalMath init op args = do
-  let op' :: Expr -> Int -> CompilerM Expr
+  let op' :: Expr -> Int -> EvalM Expr
       op' l r = do
         l' <- coerceNum l
         pure . Constant . Num $ op l' r
@@ -103,7 +103,7 @@ bindVars envRef bindings = readIORef envRef >>= extendEnv bindings >>= newIORef
       ref <- newIORef value
       return (var, ref)
 
-apply :: Expr -> [Expr] -> CompilerM Expr
+apply :: Expr -> [Expr] -> EvalM Expr
 apply (Atom sym) args | has primitiveSyms sym = applyPrim (fromJust $ M.lookup sym primitives) args
 apply (Func params body closure) args =
   if length params /= length args
@@ -116,14 +116,14 @@ apply (Func params body closure) args =
     evalBody env = last <$> mapM (eval env) body
 apply op args = throwError $ "not implemented: " <> showText op <> " " <> showText args
 
-applyPrim :: Expr -> [Expr] -> CompilerM Expr
+applyPrim :: Expr -> [Expr] -> EvalM Expr
 applyPrim (Prim _ op) args = op args
 applyPrim e args = error $ "applyPrim on non-prim" <> show e <> " for " <> show args
 
 makeFunc :: (MonadIO m) => Env -> [Expr] -> [Expr] -> m Expr
 makeFunc env args body = return $ Func (map showText args) body env
 
-eval :: Env -> Expr -> CompilerM Expr
+eval :: Env -> Expr -> EvalM Expr
 eval env v@(Constant _) = pure v
 eval _ (QuoteList xs) = pure $ List xs
 eval env x@(Case key clauses) = evalCaseLam env key clauses
@@ -167,7 +167,7 @@ maybeToEither :: e -> Maybe a -> Either e a
 maybeToEither err Nothing = Left err
 maybeToEither _ (Just x) = Right x
 
-evalCaseLam :: Env -> Expr -> [Clause] -> CompilerM Expr
+evalCaseLam :: Env -> Expr -> [Clause] -> EvalM Expr
 evalCaseLam env key clauses = do
   key' <- eval env key
   (`runContT` id) do
@@ -179,7 +179,7 @@ evalCaseLam env key clauses = do
             else pure ()
       pure $ pure nil
 
-evalCase :: Env -> Expr -> [Expr] -> CompilerM Expr
+evalCase :: Env -> Expr -> [Expr] -> EvalM Expr
 evalCase env key clauses = do
   key' <- eval env key
   case condHead (matchClause key') clauses of
@@ -197,20 +197,20 @@ condHead :: (a -> Bool) -> [a] -> Maybe a
 condHead predicate xs =
   safe head $ dropWhile (not . predicate) xs
 
-evalCompOp :: (Int -> Int -> Bool) -> [Expr] -> CompilerM Expr
+evalCompOp :: (Int -> Int -> Bool) -> [Expr] -> EvalM Expr
 evalCompOp op args = do
-  let op' :: Expr -> Int -> CompilerM Expr
+  let op' :: Expr -> Int -> EvalM Expr
       op' l r = do
         l' <- coerceNum l
         pure . B $ op l' r
   evalInfix op' args coerceNum
 
-isBound :: Env -> Sym -> CompilerM Bool
+isBound :: Env -> Sym -> EvalM Bool
 isBound envRef var = do
   env <- liftIO $ readIORef envRef
   pure . isJust $ M.lookup var env
 
-defineVar :: Env -> Text -> Expr -> CompilerM Expr
+defineVar :: Env -> Text -> Expr -> EvalM Expr
 defineVar envRef var value = do
   alreadyDefined <- isBound envRef var
   if alreadyDefined
@@ -221,7 +221,7 @@ defineVar envRef var value = do
       writeIORef envRef (M.insert var valueRef env)
       return value
 
-getVar :: Env -> Sym -> CompilerM Expr
+getVar :: Env -> Sym -> EvalM Expr
 getVar envRef var = do
   env <- liftIO $ readIORef envRef
   maybe
@@ -229,7 +229,7 @@ getVar envRef var = do
     (liftIO . readIORef)
     (M.lookup var env)
 
-setVar :: Env -> Sym -> Expr -> CompilerM Expr
+setVar :: Env -> Sym -> Expr -> EvalM Expr
 setVar envRef var val = do
   env <- liftIO $ readIORef envRef
   maybe
@@ -240,9 +240,9 @@ setVar envRef var val = do
 
 -- builtins
 
-evalBoolOp :: (Bool -> Bool -> Bool) -> [Expr] -> CompilerM Expr
+evalBoolOp :: (Bool -> Bool -> Bool) -> [Expr] -> EvalM Expr
 evalBoolOp op args = do
-  let op' :: Expr -> Bool -> CompilerM Expr
+  let op' :: Expr -> Bool -> EvalM Expr
       op' l r = do
         l' <- coerceBool l
         pure . B $ op l' r

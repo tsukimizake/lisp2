@@ -61,6 +61,8 @@ data Cps
   | DebugNop Value
   deriving (Show, Eq)
 
+
+
 nop :: Op -> Cps
 nop (Constant val) = DebugNop val
 nop (Id _) = DebugNop (Num 0)
@@ -112,7 +114,7 @@ pushToEnv = M.insert
 unwrapOne :: [a] -> a
 unwrapOne = Prelude.head
 
-evalCps :: Env -> Cps -> E.CompilerM (Env, Value)
+evalCps :: Env -> Cps -> E.EvalM (Env, Value)
 evalCps env ((Add args ret) :>> cont) = do
   acc <- liftIO $ newIORef 0
   forM_ args $ \arg -> do
@@ -189,7 +191,7 @@ cps3 = FixH "f" ["k", "x"]
 --   fromExpr l c'
 
 {-# ANN fromExpr ("HLint: ignore Avoid lambda" :: String) #-}
-fromExpr :: E.Expr -> (Op -> E.CompilerM Cps) -> E.CompilerM Cps
+fromExpr :: E.Expr -> (Op -> E.EvalM Cps) -> E.EvalM Cps
 fromExpr (E.Constant v) c = c $ Constant v
 fromExpr (E.Atom v) c = c $ Id v
 fromExpr (E.OpList "fix" [E.Atom f, E.List args, bound, body]) c = do
@@ -209,38 +211,53 @@ fromExpr (E.OpList "debug" [E.Constant val]) c = do
   traceShowM val
   DebugLog (show val) [] Nothing >>=: c (Constant val)
 fromExpr (E.OpList "debug" _) c = throwError "malformed debug"
-fromExpr (E.OpList "<" [lhs, rhs]) c =
+fromExpr (E.OpList "<" [lhs, rhs]) c = do
+  j <- E.gensym
+  l' <- fromExpr lhs (genApply (Id j))
+  r' <- fromExpr rhs (genApply (Id j))
+
+  cv <- nameFunc j c
+
+  -- let c' = Lt [l', r'] Nothing |>>=: undefined
   undefined
--- fromLogicalOp "<" (lhs, rhs) c
 fromExpr (E.OpList "if" [cond, E.Atom "then", then_, E.Atom "else", else_]) c = do
   j <- E.gensym
-  v <- E.gensym
-  cv <- c (Id v)
   t' <- fromExpr then_ (genApply (Id j))
   e' <- fromExpr else_ (genApply (Id j))
-  let c' = \x -> FixS j [v] cv :&> Eq [x, Constant $ Bool True] Nothing :|> [t', e']
+  cv <- nameFunc j c
+  let c' = \x -> cv :&> Eq [x, Constant $ Bool True] Nothing :|> [t', e']
   fromExpr cond (pure . c')
   where
-    genApply f x = pure $ AppF f [x]
     isSimpleCompare :: E.Expr -> Bool
     isSimpleCompare (E.OpList op _) = op `elem` ["<", ">", "=", "/="]
     isSimpleCompare _ = False
-    fromLogicalOp = undefined
 fromExpr (E.OpList "if" _) c = throwError "malformed if"
 
-fromExprList :: [E.Expr] -> ([Op] -> E.CompilerM Cps) -> E.CompilerM Cps
+fromExprList :: [E.Expr] -> ([Op] -> E.EvalM Cps) -> E.EvalM Cps
 fromExprList exprs = g exprs []
   where
     g [] es c' = c' (reverse es)
     g (h : t) es c' = fromExpr h (\x -> g t (x : es) c')
 
-fBind :: Text -> [Expr] -> Expr -> E.CompilerM (Text, [Text], Cps)
+fBind :: Text -> [Expr] -> Expr -> E.EvalM (Text, [Text], Cps)
 fBind f params body = do
   k <- E.gensym
   params' <- mapM coerceToSym params
   body' <- fromExpr body (\retSym -> pure $ AppB (Id k) [retSym])
   pure (f, k : params', body')
   where
-    coerceToSym :: E.Expr -> E.CompilerM Text
+    coerceToSym :: E.Expr -> E.EvalM Text
     coerceToSym (E.Atom s) = pure s
     coerceToSym e = throwError $ showText e <> " is not sym"
+
+genApply :: Op -> Op -> E.EvalM Cps
+genApply f x = pure $ AppF f [x]
+
+-- FixSするという実態に名前が合ってない
+-- というかvどっからでてきたの絶対エラーなる
+-- ifのところもっぺんよみなおして
+nameFunc :: Sym -> (Op -> E.EvalM Cps) -> E.EvalM Fix
+nameFunc sym func = do
+  v <- E.gensym
+  fv <- func (Id v)
+  pure $ FixS sym [v] fv

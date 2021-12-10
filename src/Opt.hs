@@ -5,11 +5,11 @@ import Cps
 import Debug.Trace
 import Types
 
-optimize :: Expr -> CompilerM Expr
+optimize :: Expr -> EvalM Expr
 optimize x = do
   traverseExpr optimizeCase x
 
-optimizeCase :: Expr -> CompilerM Expr
+optimizeCase :: Expr -> EvalM Expr
 optimizeCase (List (Atom "case" : key : clauses)) = do
   clauses' <- forM clauses \clause -> do
     case clause of
